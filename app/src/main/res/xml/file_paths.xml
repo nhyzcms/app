@@ -2,11 +2,13 @@
 <!--
   FileProvider 可共享路径白名单（拍照临时文件 + 分享图片的缓存）。
 
-  只暴露 cacheDir 下的两个子目录：相机 App / 分享接收方拿到的是单个文件的 content URI，
+  只暴露 cacheDir 下的子目录：相机 App / 分享接收方 / 系统安装器拿到的是单个文件的 content URI，
   不需要存储权限，也不会把 App 私有目录暴露出去（见 docs/SECURITY.md 第 2 节）。
   新增可共享目录前必须先想清楚：这里每多一行，就等于多一个对外可见的路径。
 -->
 <paths>
     <cache-path name="capture" path="capture/" />
     <cache-path name="share" path="share/" />
+    <!-- 更新包（区块 3）：下载到 cacheDir/update/ 后交给系统安装器读取 -->
+    <cache-path name="update" path="update/" />
 </paths>

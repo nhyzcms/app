@@ -44,4 +44,19 @@ object AppConfig {
 
     /** 更新清单地址（区块 3 使用；nginx 静态文件，不经 Django）。 */
     const val UPDATE_MANIFEST_URL = SITE_ORIGIN + "/app-update/manifest.json"
+
+    /**
+     * 允许的更新主机白名单（清单地址与 APK 下载地址共用，唯一真源）。
+     *
+     * 为什么需要它：更新流程会"下载并安装"——这是本 App 权限最大的一条路径，
+     * 因此清单里写的任何地址都必须落在我们自己可控的主机内：
+     *  - `8.153.145.175`：自托管（首选，见 docs/UPDATE-STRATEGY.md §4）；
+     *  - `github.com` / `objects.githubusercontent.com`：GitHub Release 备用源。
+     * 换域名或换托管时必须同步改这里，否则更新会被安全策略判为非法并忽略。
+     */
+    val UPDATE_ALLOWED_HOSTS: Set<String> = setOf(
+        "8.153.145.175",
+        "github.com",
+        "objects.githubusercontent.com",
+    )
 }

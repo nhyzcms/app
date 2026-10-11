@@ -18,6 +18,11 @@
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+    <!--
+      更新（区块 3）：安装自己下载的更新包需要它。Android 8.0 起它不再是“开关式”权限，
+      而是由用户在系统「安装未知应用」页面逐个允许；壳不会绕过这一步（见 shell/update/UpdateInstaller）。
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- 没有摄像头的设备（平板、部分模拟器）也要能安装 -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -76,8 +81,8 @@
         </activity>
 
         <!--
-          拍照输出与分享图片的临时文件通过 FileProvider 交给对方 App（不用存储权限）。
-          authorities 必须与 AppConfig.FILE_PROVIDER_AUTHORITY 一致（同一串），
+          拍照输出、分享图片、更新包的临时文件都通过 FileProvider 交给对方 App/系统安装器
+          （不用存储权限）。authorities 必须与 AppConfig.FILE_PROVIDER_AUTHORITY 一致（同一串），
           否则 getUriForFile 会抛异常；用 ${applicationId} 前缀，debug 变体才不会被写死的包名坑到。
         -->
         <provider

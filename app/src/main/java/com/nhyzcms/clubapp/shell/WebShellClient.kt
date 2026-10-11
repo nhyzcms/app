@@ -24,6 +24,11 @@ class WebShellClient(
     private val onBlocked: (reason: String, url: String) -> Unit,
     private val onPageStarted: (String) -> Unit,
     private val onPageFinished: (String) -> Unit,
+    /**
+     * 外链是否交给系统浏览器（清单开关 `externalLinkInBrowser`）。
+     * 关掉时外链在壳内加载；明文（http）拦截不依赖它——NavPolicy 会先拒掉。
+     */
+    private val externalLinkInBrowser: () -> Boolean = { true },
 ) : WebViewClient() {
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -35,6 +40,9 @@ class WebShellClient(
             is NavDecision.InApp -> false // 交给 WebView 自己加载
 
             is NavDecision.External -> {
+                // 清单开关要求"外链也在壳内打开"时直接放行给 WebView；
+                // 明文（http）走不到这里——NavPolicy 已经把它判成 Blocked。
+                if (!externalLinkInBrowser()) return false
                 openExternally(view.context, decision.url)
                 onExternalOpened()
                 true
