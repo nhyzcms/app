@@ -8,25 +8,29 @@
 
 - **URL（固定，写死在壳里）**：`https://8.153.145.175/app-update/manifest.json`
 - **实现状态（区块 3）**：壳侧已按本文件实现（解析见 `shell/update/UpdateManifest.kt`，
-  安全判定见 `shell/update/UpdatePolicy.kt`）。nginx 片段在 `scripts/nginx-app-update.conf`，
-  服务器目录与部署步骤在 [`../deploy/app-update/README.md`](../deploy/app-update/README.md)。
+  安全判定见 `shell/update/UpdatePolicy.kt`）。**服务器侧已于 2026-10-11 部署完成**：
+  nginx 片段在 `scripts/nginx-app-update.conf`，目录与步骤在 [`../deploy/app-update/README.md`](../deploy/app-update/README.md)。
 - **为什么不放 `/media/` 或 `/app/`**：
   - `/media/` 是用户上传目录（7 天缓存 + 语义不清）；
   - `/app/...` 会被 SPA 兜底路由拦住（实测返回 index.html 200，容易认错成功）；
   - `/app-update/` 走 nginx 静态 `location`，**不经 Django / gunicorn**，服务器负载为 0，且目录与发布包解压目录分离（不会被更新器覆盖）。
-- **部署形态（区块 3 时执行，需用户确认）**：
+- **部署形态**：
   ```nginx
-  # /etc/nginx/conf.d/club.conf 内
+  # /etc/nginx/conf.d/club.conf 的 HTTPS server { } 内
   location /app-update/ {
       alias /opt/club/app-update/;
       autoindex off;
       add_header Cache-Control "no-cache" always;   # 每次协商，拿到即时配置
+      add_header Strict-Transport-Security "max-age=31536000" always;
+      add_header Alt-Svc 'h3=":443"; ma=86400' always;
       types { application/json json; application/vnd.android.package-archive apk; }
       default_type application/octet-stream;
-      add_header Strict-Transport-Security "max-age=31536000" always;
+      limit_except GET HEAD { deny all; }
   }
   ```
-  目录：`/opt/club/app-update/{manifest.json, latest.apk, latest.apk.sha256}`（权限 `root:www-data 750`，只读）。
+  目录：`/opt/club/app-update/{manifest.json, latest.apk, latest.apk.sha256}`，权限 `root:<nginx worker 用户> 0750`（文件 0640）——
+  worker 用户以机器实际为准（本机是 `nginx`；Debian 系常见 `www-data`），**写错会 403**。
+  location 内一旦用 `add_header` 就不再继承 server 级，所以 HSTS / Alt-Svc 要重复声明。
 - **缓存**：绝不能长缓存（否则开关不生效）；用 `no-cache` + ETag/Last-Modified。
 
 ---
