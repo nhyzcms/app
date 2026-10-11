@@ -13,6 +13,7 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -20,6 +21,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -29,6 +31,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.nhyzcms.clubapp.shell.AppConfig
 import com.nhyzcms.clubapp.shell.CameraCapture
 import com.nhyzcms.clubapp.shell.DownloadPolicy
@@ -45,6 +48,9 @@ import com.nhyzcms.clubapp.shell.UploadLimit
 import com.nhyzcms.clubapp.shell.UrlParts
 import com.nhyzcms.clubapp.shell.WebShellChromeClient
 import com.nhyzcms.clubapp.shell.WebShellClient
+import com.nhyzcms.clubapp.shell.feel.BackExitPolicy
+import com.nhyzcms.clubapp.shell.feel.FeelHost
+import com.nhyzcms.clubapp.shell.feel.ScrollAwareWebView
 import com.nhyzcms.clubapp.shell.update.UpdateController
 import com.nhyzcms.clubapp.shell.update.UpdatePolicy
 
@@ -62,14 +68,30 @@ import com.nhyzcms.clubapp.shell.update.UpdatePolicy
  *
  * 区块 3 新增的三级更新（只做壳侧必需的接线，逻辑都在 shell/update 里）：
  *   L0 网站发版即生效 / L1 清单开关与起始路由 / L2 APK 自升级 → [UpdateController]
+ *
+ * 区块 4 新增的原生手感（接线集中在 [FeelHost]，本类只留调用点）：
+ *   ① 启动页 + 首屏骨架（不引入任何图片资源）
+ *   ② 沉浸式配色：状态栏 / 导航栏 / 窗口底色跟随网页 meta theme-color
+ *   ③ 下拉刷新（只在网页顶部生效）→ SwipeRefreshLayout + [ScrollAwareWebView]
+ *   ④ 返回顶部浮动按钮（清单开关 showBackToTop）
+ *   ⑤ 返回手势：预测式返回 + 双击才退出 → [BackExitPolicy]
  */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var webView: WebView
+    private lateinit var webView: ScrollAwareWebView
     private lateinit var progress: ProgressBar
     private lateinit var errorPanel: View
     private lateinit var errorTitle: TextView
     private lateinit var errorMessage: TextView
+
+    /** 区块 4：下拉刷新容器（手势只在网页回到顶部时生效，见 [FeelHost]）。 */
+    private lateinit var swipeRefresh: SwipeRefreshLayout
+
+    /** 区块 4：首屏骨架（仅冷启动首屏显示，消除白屏）。 */
+    private lateinit var skeleton: View
+
+    /** 区块 4：返回顶部按钮（清单开关 showBackToTop）。 */
+    private lateinit var fabButton: ImageView
 
     /** 最后一次加载或失败的地址，供“重试”与“用浏览器打开”使用。 */
     private var lastUrl: String = AppConfig.START_URL
@@ -91,6 +113,12 @@ class MainActivity : AppCompatActivity() {
 
     /** 本进程内拒绝过存储权限：不再反复弹窗，下载直接走 App 目录。 */
     private var storageDeniedInSession = false
+
+    /**
+     * 区块 4：原生手感宿主（窗口配色 / 下拉刷新 / 首屏骨架 / 返回顶部 / 返回键判定）。
+     * 逻辑都在 [FeelHost] 里，本类只保留调用点。
+     */
+    private lateinit var feel: FeelHost
 
     private class PendingChooser(
         val callback: ValueCallback<Array<Uri>>,
@@ -140,6 +168,9 @@ class MainActivity : AppCompatActivity() {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 区块 4：先把清单里的启动页主题切回常规主题（Activity 的 theme 是 Theme.ClubApp.Splash）。
+        // ⚠️ 必须在 super.onCreate 之前调用：窗口背景一旦按启动页主题定下来就不会再变。
+        setTheme(R.style.Theme_ClubApp)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         bindViews()
@@ -150,12 +181,27 @@ class MainActivity : AppCompatActivity() {
         mediaSharer = MediaSharer(this)
         // 更新协调器（区块 3）。UA 用 lambda 延迟取，等下面 configureWebView 配好再请求。
         updates = UpdateController(this) { webView.settings.userAgentString }
+        // 区块 4：原生手感接线（窗口配色、下拉刷新、骨架、返回顶部、返回键判定）
+        feel = FeelHost(
+            activity = this,
+            rootView = findViewById(R.id.root),
+            webView = webView,
+            swipeRefresh = swipeRefresh,
+            skeleton = skeleton,
+            fabButton = fabButton,
+            errorPanel = errorPanel,
+            flags = { updates.flags() },
+            reload = { webView.reload() },
+        )
         // 上次拍完照/分享完没来得及清的临时文件在这里收尾。
         cameraCapture.cleanStaleFiles()
         mediaSharer.cleanStaleFiles()
 
         // release 包关闭 WebView 远程调试（安全文档第 2 节）；debug 包保留 chrome://inspect 能力。
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+
+        // 区块 4：窗口配色与沉浸式、下拉刷新、返回顶部（都要读 updates.flags()，故放在 updates 之后）
+        feel.configure()
 
         configureWebView()
         registerBackCallback()
@@ -167,8 +213,14 @@ class MainActivity : AppCompatActivity() {
             // 区块 3（L0）：清单开关要求时先丢掉入口 HTML 缓存，确保拿到最新页面。
             // 只清 HTTP 缓存，不动 Cookie（登录态照旧）。
             if (updates.shouldForceRefreshEntry()) webView.clearCache(true)
+            // 区块 4：冷启动首屏先顶一个骨架屏，等网页画出来再淡出（消掉白屏那一闪）。
+            // 恢复历史时**不**显示骨架，否则历史重绘很快、反而会闪一下。
+            feel.showSkeleton()
             // 起始路由优先用清单里缓存的 startRoute（区块 3，L1）
             load(intentUrlOrNull(intent) ?: updates.startUrl())
+        } else {
+            // 恢复历史：内容马上就有，直接算作已加载（下拉刷新 / 返回顶部按钮据此生效）。
+            feel.onPageRendered()
         }
 
         // 更新包残留清理 + 冷启动后延迟几秒检查（不抢首屏带宽：服务器只有 3 M）
@@ -184,6 +236,9 @@ class MainActivity : AppCompatActivity() {
         errorPanel = findViewById(R.id.errorPanel)
         errorTitle = findViewById(R.id.errorTitle)
         errorMessage = findViewById(R.id.errorMessage)
+        swipeRefresh = findViewById(R.id.swipeRefresh)
+        skeleton = findViewById(R.id.skeleton)
+        fabButton = findViewById(R.id.fabButton)
     }
 
     @Suppress("SetJavaScriptEnabled", "DEPRECATION")
@@ -231,6 +286,7 @@ class MainActivity : AppCompatActivity() {
             onPageFinished = {
                 progress.visibility = View.GONE
                 hideError()
+                feel.onPageRendered()
             },
             // 清单开关 externalLinkInBrowser（默认 true = 外链交系统浏览器）
             externalLinkInBrowser = {
@@ -534,7 +590,14 @@ class MainActivity : AppCompatActivity() {
         toast(R.string.toast_copied)
     }
 
-    /** 返回键：先关错误面板，再网页后退，最后才退出应用。 */
+    /**
+     * 返回键（区块 4 重写）：
+     *   ① 错误面板盖着 → 先关面板；
+     *   ② 网页还能后退 → 后退（Android 13+ 的预测式返回动画由系统负责，
+     *      前提是清单里开了 android:enableOnBackInvokedCallback）；
+     *   ③ 已在起始页 → 第一次只提示「再按一次退出」，2 秒内再按才退出（判定见 [BackExitPolicy]）。
+     * 这样误触返回不会直接把 App 关掉（区块 4 验收点）。
+     */
     private fun registerBackCallback() {
         onBackPressedDispatcher.addCallback(
             this,
@@ -544,14 +607,20 @@ class MainActivity : AppCompatActivity() {
                         hideError()
                         return
                     }
-                    if (webView.canGoBack()) {
-                        webView.goBack()
-                        return
+                    // 判定（含「再按一次退出」的时间窗）由 FeelHost 负责
+                    when (feel.decideBack(webView.canGoBack())) {
+                        BackExitPolicy.Action.GO_BACK -> webView.goBack()
+
+                        BackExitPolicy.Action.CONFIRM_EXIT ->
+                            toast(R.string.toast_press_back_again)
+
+                        BackExitPolicy.Action.EXIT -> {
+                            // 把控制权交回系统（退出）。
+                            isEnabled = false
+                            onBackPressedDispatcher.onBackPressed()
+                            isEnabled = true
+                        }
                     }
-                    // 把控制权交回系统（退出）。
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                    isEnabled = true
                 }
             },
         )
@@ -588,6 +657,8 @@ class MainActivity : AppCompatActivity() {
         )
         errorPanel.visibility = View.VISIBLE
         progress.visibility = View.GONE
+        // 区块 4：错误面板盖着时不该再有刷新圈或悬浮按钮（重试按钮才是唯一出路）。
+        feel.onErrorPanelChanged(visible = true)
 
         if (kind.isSecurityRelated) {
             // 日志脱敏：只记 host，不记完整 URL 与查询串
@@ -632,10 +703,14 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         webView.onResume() // 恢复 JS 定时器与动画
+        // 区块 4：回到前台才开始探测网页主题/滚动（站内切换深色后状态栏能跟上）
+        feel.onResume()
         updates.checkIfDue() // 回到前台按 30 分钟节流检查更新（区块 3）
     }
 
     override fun onPause() {
+        // 区块 4：退到后台立刻停止探测（只在可见时轮询，避免白耗电）
+        feel.onPause()
         webView.onPause()
         super.onPause()
     }
@@ -650,6 +725,9 @@ class MainActivity : AppCompatActivity() {
         // 区块 3：取消未完成的更新下载、清掉主线程回调（避免持有已销毁的 Activity）
         updates.dispose()
 
+        // 区块 4：停掉网页状态探测，避免 Handler 继续持有即将销毁的 WebView
+        feel.dispose()
+
         // WebView 不主动销毁会泄露 Activity。
         // ⚠️ 踩坑：API 35 上 setWebViewClient 的参数是 @NonNull，**不能传 null**
         //（会报 “Null cannot be a value of a non-null type” 而编译失败），
@@ -657,7 +735,7 @@ class MainActivity : AppCompatActivity() {
         webView.stopLoading()
         webView.webViewClient = WebViewClient()
         webView.webChromeClient = WebChromeClient()
-        (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+        (webView.parent as? ViewGroup)?.removeView(webView)
         webView.destroy()
         super.onDestroy()
     }
