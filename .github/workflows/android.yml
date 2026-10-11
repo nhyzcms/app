@@ -5,14 +5,17 @@ name: Android
 #   * 推 tag vX.Y.Z      → 建签名 release APK 并自动创建 GitHub Release
 #   * 手动 workflow_dispatch 便于重跑
 #
-# 【为何构建步骤要 tee + 写 Step Summary】
+# 【为何失败时要贴日志到 PR 评论】
 #   Actions 的原始日志需要仓库管理员权限才能通过 API 读取，
-#   而运行摘要（step summary）可以通过 check-runs API 公开读到。
-#   把报错尾巴写进摘要，是为了让助手/维护者不用开浏览器就能定位 CI 故障。
+#   而 Step Summary / annotations 都不提供完整报错。
+#   所以构建失败时自动把日志尾部贴成本 PR 的评论：
+#   维护者与助手都能直接看到真实报错，不用上去点网页。
 #
-# 【已踩过的坑】
-#   1) android-actions/setup-android@v3 失败（8 秒内退出）——已弃用，改自写脚本；
-#   2) gradle :app:versionInfo 找不到任务（versionInfo 注册在根项目）——已改为纯 shell 打印。
+# 【已踩过的坑（别再踩）】
+#   1) android-actions/setup-android@v3 直接失败——已弃用，改为自写脚本；
+#   2) gradle :app:versionInfo 任务不存在（versionInfo 注册在根项目）——已改为纯 shell 打印；
+#   3) runner 默认 ubuntu-latest 将于 2026-10-19 迁到 Ubuntu 26——已固定 ubuntu-24.04；
+#   4) sdkmanager --licenses 在 runner 上会失败——改为直接写 licenses 文件。
 on:
   push:
     branches: ["**"]
@@ -21,7 +24,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # 创建 Release 需要
+  contents: write       # 创建 Release
+  pull-requests: write  # 失败时把日志贴成 PR 评论
 
 concurrency:
   group: android-${{ github.ref }}
@@ -34,15 +38,14 @@ env:
 jobs:
   debug:
     name: Debug APK
-    # tag 构建走下面的 release 作业
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - name: 安装 JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -60,8 +63,6 @@ jobs:
           echo "分支：$GITHUB_REF_NAME  SHA：$GITHUB_SHA"
           echo "--- version.properties ---"
           cat version.properties
-          echo "--- java ---"
-          java -version 2>&1 | head -3
 
       - name: 构建 debug APK
         run: |
@@ -69,20 +70,33 @@ jobs:
           gradle :app:assembleDebug --stacktrace 2>&1 | tee build.log
           code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
-            {
-              echo "## ❌ Debug 构建失败"
-              echo ""
-              echo '```text'
-              tail -n 150 build.log
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::构建失败，末尾 150 行已写入本步骤摘要（Summary）"
+            echo "::error::构建失败，日志尾部已贴到 PR 评论"
             exit "$code"
           fi
-          echo "## ✅ Debug 构建成功" >> "$GITHUB_STEP_SUMMARY"
           ls -lh app/build/outputs/apk/debug/
 
+      - name: 失败时贴出日志尾部（PR）
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo '### ❌ Debug 构建失败：日志尾部（自动生成）'
+            echo "commit: \`${GITHUB_SHA:0:8}\`"
+            echo ''
+            echo '```text'
+            tail -n 120 build.log 2>/dev/null || echo '(未能读到 build.log)'
+            echo '```'
+          } > ci-comment.md
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gh pr comment "${{ github.event.pull_request.number }}" --body-file ci-comment.md
+          else
+            echo '（非 PR 触发，仅输出到控制台）'
+            cat ci-comment.md
+          fi
+
       - name: 上传产物
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
@@ -92,13 +106,13 @@ jobs:
   release:
     name: Release APK
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
       - name: 安装 JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -145,17 +159,10 @@ jobs:
           gradle :app:assembleRelease --stacktrace 2>&1 | tee build.log
           code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
-            {
-              echo "## ❌ Release 构建失败"
-              echo ""
-              echo '```text'
-              tail -n 150 build.log
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::构建失败，末尾 150 行已写入本步骤摘要（Summary）"
+            echo "::error::Release 构建失败，日志尾部如下"
+            tail -n 120 build.log
             exit "$code"
           fi
-          echo "## ✅ Release 构建成功" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 重命名并生成 SHA-256
         run: |
