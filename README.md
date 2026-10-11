@@ -70,6 +70,15 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
     │   │       ├── LongPressPolicy.kt       长按命中判定（图片 / 链接）
     │   │       ├── MediaSharePolicy.kt      分享图片的前置判定（纯函数）
     │   │       ├── MediaSharer.kt           分享图片文件本体（缓存 → FileProvider → ACTION_SEND）
+    │   │       ├── feel/                    区块 4：原生手感（启动页/配色/骨架/下拉刷新/返回顶部）
+    │   │       │   ├── PageTheme.kt             网页主题色 → 壳配色（纯函数）
+    │   │       │   ├── BackExitPolicy.kt        返回键决策：双击才退出（纯函数）
+    │   │       │   ├── FabPolicy.kt             返回顶部按钮的显示阈值（纯函数）
+    │   │       │   ├── PullToRefreshPolicy.kt   下拉刷新的门控与超时（纯函数）
+    │   │       │   ├── EdgeToEdgePolicy.kt      铺满开关与浮层让位（纯函数）
+    │   │       │   ├── ScrollAwareWebView.kt    同步上报滚动位置的 WebView
+    │   │       │   ├── PageStateProbe.kt        每 2 s 读网页主题色/滚动位置（固定脚本）
+    │   │       │   └── FeelHost.kt              把上述能力接到窗口与视图的宿主
     │   │       └── update/                  区块 3：三级更新（L0 热 / L1 清单 / L2 自升级）
     │   │           ├── MiniJson.kt              零依赖 JSON 解析（可单测）
     │   │           ├── UpdateManifest.kt        清单数据模型 + 解析（字段级容错）
@@ -82,7 +91,7 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
     │   │           ├── SignatureCheck.kt        签名一致性判定（纯函数）
     │   │           ├── UpdateInstaller.kt       FileProvider + 系统安装器（含“未知来源”引导）
     │   │           └── UpdateController.kt      串联检查 → 提示 → 下载 → 校验 → 安装
-    │   └── res/                         字符串、主题（跟随系统深色）、网络安全配置、
+    │   └── res/                         字符串、主题（跟随系统深色 + 启动页）、网络安全配置、
     │                                    FileProvider 路径、纯矢量图标、主界面布局
     └── src/test/java/…                  纯逻辑单测（不需要设备；`gradle :app:testDebugUnitTest`）
 ```
@@ -150,6 +159,7 @@ gradle :app:testDebugUnitTest
     壳不绕过也不静默安装）；
 - 所有带会话的请求（`DownloadManager`、分享图片）**必须手动带 Cookie**；
 - 更新包必须**校验 sha256 + 签名一致**才允许安装；安装来源链接只允许本站 / GitHub Releases；
+- 壳内执行 JS 只允许**固定常量脚本**（区块 4：读主题色、滚回顶部），禁止拼接变量，也不用 JS 桥接（见 SECURITY.md §4.1）；
 - 密钥永不入库：keystore 只存在于 GitHub Secrets（base64）；
 - Release 构建关闭 WebView 远程调试（`BuildConfig.DEBUG` 才开）。
 
@@ -160,7 +170,7 @@ gradle :app:testDebugUnitTest
 | 1 | 整体骨架：可编译的最小壳 + 文档 + CI | ✅ 已完成（[报告](docs/chunks/CHUNK-01-REPORT.md)） |
 | 2 | 全部功能能力：文件上传/下载、相机、权限、长按保存、分享 | ✅ 代码完成（[报告](docs/chunks/CHUNK-02-REPORT.md)）；🟡 待真机验收 |
 | 3 | 三级更新机制（manifest + APK 自升级） | 🟡 代码完成 + 清单端点已部署（2026-10-11）（[报告](docs/chunks/CHUNK-03-REPORT.md)）；待真机验收 |
-| 4 | 原生手感：沉浸式、下拉刷新、手势返回、启动页、主题跟随 | ⏳ |
+| 4 | 原生手感：沉浸式配色、启动页、骨架屏、下拉刷新、手势返回、返回顶部 | 🟡 代码完成（[报告](docs/chunks/CHUNK-04-REPORT.md)）；待真机验收 |
 | 5 | 站内消息与角标（实时/通知） | ⏳ |
 | 6 | 弱网与性能（3M 带宽适配、缓存、预加载） | ⏳ |
 | 7 | 签名与首个 Release 发布 | ⏳ |
@@ -192,6 +202,7 @@ gradle :app:testDebugUnitTest
 | [FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md) | 网站功能覆盖台账 |
 | [chunks/CHUNK-02-REPORT.md](docs/chunks/CHUNK-02-REPORT.md) | 区块 2（文件/拍照/下载/长按/分享）交付说明 |
 | [chunks/CHUNK-03-REPORT.md](docs/chunks/CHUNK-03-REPORT.md) | 区块 3（三级更新）交付说明与服务器配置步骤 |
+| [chunks/CHUNK-04-REPORT.md](docs/chunks/CHUNK-04-REPORT.md) | 区块 4（原生手感）交付说明与真机验收清单 |
 | [deploy/app-update/README.md](deploy/app-update/README.md) | 更新分发目录的部署与发版操作 |
 
 ---
