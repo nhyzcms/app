@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色（values-night）：窗口与状态栏跟随系统深色 -->
+    <color name="window_background">#101216</color>
+    <color name="text_primary">#E5E7EB</color>
+    <color name="text_secondary">#9CA3AF</color>
+</resources>

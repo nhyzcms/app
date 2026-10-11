@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">南汇一中传媒社</string>
+
+    <!-- 错误面板 -->
+    <string name="error_title">无法加载页面</string>
+    <string name="error_network">网络好像断开了，或服务器暂时不可用。请检查网络后重试。</string>
+    <string name="error_tls">安全连接失败：无法验证服务器证书。公共 WiFi 可能被劫持，请不要在此网络下输入密码。</string>
+    <string name="error_cleartext">已拦截不安全的明文链接（http）。本站只允许 HTTPS 访问。</string>
+    <string name="error_generic">页面加载失败，请稍后重试。</string>
+
+    <!-- 操作 -->
+    <string name="action_retry">重试</string>
+    <string name="action_open_browser">用浏览器打开</string>
+    <string name="action_clear_cache">清除缓存（会登出）</string>
+
+    <!-- 提示 -->
+    <string name="toast_external_opened">已在系统浏览器打开</string>
+    <string name="toast_link_blocked">已拦截不支持的链接</string>
+    <string name="toast_download_todo">文件下载将在后续版本支持</string>
+
+    <!-- 无障碍 -->
+    <string name="cd_webview">网站内容</string>
+    <string name="cd_progress">加载进度</string>
+</resources>
