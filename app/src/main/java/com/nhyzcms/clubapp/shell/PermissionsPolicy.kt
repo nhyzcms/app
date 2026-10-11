@@ -20,6 +20,7 @@ import java.util.Locale
  * 否则注释不会在预期的位置结束，而是把文件剩余部分全吞掉，
  * 报错却是 Unclosed comment / Unresolved reference，极难定位。
  * 要举例就写在线注释（双斜杠）里，或把星号写成文字（已加进 scripts/preflight.sh）。
+ * （字符串字面量里没有这个问题，只有块注释会嵌套。）
  */
 object PermissionsPolicy {
 
@@ -45,6 +46,6 @@ object PermissionsPolicy {
             ?.filter { it.isNotEmpty() }
             .orEmpty()
         if (tokens.isEmpty()) return false
-        return tokens.any { it == "image/" + "*" || it.startsWith("image/") }
+        return tokens.any { it.startsWith("image/") }
     }
 }
