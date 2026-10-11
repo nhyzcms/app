@@ -48,7 +48,7 @@
 | `res/drawable/ic_launcher_foreground.xml` | 图标改为“三道波 + 圆点”（社徽意象） |
 | `app/build.gradle.kts` | 新增 **仅测试类路径** 的 `junit:junit:4.13.2` |
 | `.github/workflows/android.yml` | CI 新增“纯逻辑单测”步骤（debug 在 APK 之前；release 作为发版阻断） |
-| `scripts/preflight.sh` | 新增 5 条静态规则（见第 4 节） |
+| `scripts/preflight.sh` | 新增 6 条静态规则（见第 4 节） |
 | `scripts/ci-extract-errors.sh` | 报错模式补充单测失败行（FAILED / AssertionError / junit） |
 | `docs/FEATURE-MATRIX.md` | 第 5/6/9/12/13/16/19/20 行标 🟡（壳已就绪，入口待区块 8），第 21~24 行标 🟡 待真机 |
 | `docs/CI-WORKFLOW.md`、`README.md` | 同步单测步骤、新组件与当前状态 |
@@ -64,7 +64,7 @@
 
 ### 2.2 一个存储权限都不申请（与简报有出入，已取安全基线）
 
-`docs/SECURITY.md` §2/§7 明确写着“不申请 `READ/WRITE_EXTERNAL_STORAGE`”。基于这个前提：
+`docs/SECURITY.md` §2/§7 明确写着“不申请读写外部存储”。基于这个前提：
 
 | 场景 | 做法 | 需要权限？ |
 |---|---|---|
@@ -86,12 +86,12 @@
 在清单里声明了 `CAMERA`（这样“拍照”入口在各厂 ROM 上才稳定出现），而**一旦声明**，
 系统就要求调用方自己持有该权限，否则 `ACTION_IMAGE_CAPTURE` 会被拒。所以：
 
-- 只在“**将要**提供拍照入口”时申请：`accept` 含 `image/*`，或网页写了 `capture` 属性，或设备有摄像头；
+- 只在“**将要**提供拍照入口”时申请：`accept` 含 `image/…`（图片通配），或网页写了 `capture`，或设备有摄像头；
 - 用户拒绝 → 本次会话不再重复弹窗，退化成“只能选已有文件”并给出提示；
 - “禁止且不再询问” → 弹一个说明对话框，可直接跳系统设置页；
 - 设备没有摄像头（`FEATURE_CAMERA_ANY`）→ 不申请、不给入口。
 
-> 站点里的 `<input type="file">` 用的是 `accept="image/*,video/*"` 这类写法、**没有** `capture` 属性，
+> 站点里的 `input` 用的是图片/视频的 accept 通配、**没有** `capture` 属性，
 > 所以不能只看 `isCaptureEnabled()`，否则拍照入口永远不出现（已写成单测钉死）。
 
 ### 2.4 上传体积超限：先提示，由用户决定
@@ -141,10 +141,18 @@ ADR-A05 要求 App 依赖最小化，但 `testImplementation` 不进 APK，收�
    走了相机就保留（网页还要读它上传），下次启动清掉超过 24 小时的残留。
 5. **不碰 `setWebViewClient(null)`、不改 TLS 处理**（区块 1 踩过的坑与红线，已加静态规则守着）。
 6. 日志只记 **host**，不记完整 URL / Cookie（延续区块 1 的脱敏习惯）。
+7. **Kotlin 块注释里不能出现「斜杠 + 星号」**（本块 CI 实际挂了两次才查出来）：
+   Kotlin 的块注释**支持嵌套**，KDoc 里写一个 MIME 通配示例就会开启嵌套注释，
+   注释不会在 `*/` 处结束，而是把文件剩余部分全吞掉；报错却是
+   `Unclosed comment` + 另一个文件的 `Unresolved reference`，极难定位。
+   已加进预检（第 4 节规则 6）。
+8. **预检自身的误报与丢消息**（同一个教训的另外两个面）：
+   ① 代码模式规则必须只在非注释行搜（`code_grep`），否则自己的警示注释会触发规则；
+   ② python 的 `sys.exit("消息")` 走 stderr，命令替换里必须 `2>&1`，否则报错只有空消息。
 
 ---
 
-## 4. 新增的静态预检规则（错误只能犯一次）
+## 4. 新增的静态预检规则（错误只能犯一次，共 6 条）
 
 `scripts/preflight.sh` 新增：
 
@@ -155,6 +163,10 @@ ADR-A05 要求 App 依赖最小化，但 `testImplementation` 不进 APK，收�
 | 3 | 清单里不得出现存储/媒体类权限 | 安全基线：存储权限一个都不要 |
 | 4 | 用了 `getUriForFile` 就必须同时满足：清单是 `${applicationId}.fileprovider`、代码用 `BuildConfig.APPLICATION_ID`、`res/xml/file_paths.xml` 存在 | 三者缺一，拍照只在运行时才炸，极难定位 |
 | 5 | 出现 `setDestinationInExternalPublicDir` 必须伴随 `Build.VERSION.SDK_INT` 判断 | 否则 Android 8/9 会 SecurityException |
+| 6 | Kotlin 块注释里不得出现「斜杠 + 星号」 | 块注释会嵌套，会把整个文件吞掉（本块真踩过） |
+
+> 新规则一律用 `code_grep`（只搜非注释行），并且都做过**双向验证**：
+> 干净仓库 → 通过；故意注入问题 → 精确报出行号。
 
 ---
 
@@ -210,11 +222,14 @@ ADR-A05 要求 App 依赖最小化，但 `testImplementation` 不进 APK，收�
 
 ---
 
-## 附：本块的验证方式
+## 附：本块的验证方式（实际执行的）
 
-```bash
-bash scripts/preflight.sh     # 静态预检：XML / 资源引用 / 5 条新规则（本机可跑，5 秒）
-```
+| 手段 | 结果 |
+|---|---|
+| `bash scripts/preflight.sh`（服务器 `/tmp` 只读 clone） | ✅ 全部通过（最新提交 9475efa） |
+| 新规则反向验证（故意注入“斜杠+星号”到 KDoc） | ✅ 精确报出第 5 行 |
+| 18 个 `.kt` 文件括号配平（带状态机的脚本，防长文件被截断） | ✅ 通过 |
+| `gradle :app:testDebugUnitTest` + `assembleDebug` | 交 CI（本机与服务器都没有 Android SDK，且服务器只有 2 核 2G，不在上面跑 Gradle）；失败时关键报错会自动贴成本 PR 评论 |
 
-编译与单测**交给 CI**（本机与服务器都没有 Android SDK，且服务器只有 2 核 2G，不在上面跑 Gradle）。
-CI 结果看 PR 的 Actions；失败时关键报错会自动贴成 PR 评论。
+> 本块 CI 共红 3 轮：① 预检自身的 `.proceed()` 误报；② KDoc 里的斜杠加星号（块注释嵌套）；
+> ③ 预检报错详情走 stderr 丢失。三个都已修好，并已固化成规则/备注，不会再犯。
