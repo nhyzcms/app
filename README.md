@@ -7,11 +7,11 @@
 
 ## 1. 这是什么
 
-一个 **3~5 MB 的 Android 外壳**：原生部分只负责"浏览器能力 + Android 系统能力"，
+一个 **3~5 MB 的 Android 外壳**：原生部分只负责「浏览器能力 + Android 系统能力」，
 界面与业务逻辑 100% 复用网站前端。这样做的直接收益是——
 
 - 网站发版（Django 后端 / React 前端）→ **App 重新加载即生效，无需重新下载安装包**（热更新）；
-- 只有"原生能力变化"（新权限、新桥接接口、安全修复）才需要发新 APK（冷更新）。
+- 只有「原生能力变化」（新权限、新桥接接口、安全修复）才需要发新 APK（冷更新）。
 
 详细的更新模型见 [`docs/UPDATE-STRATEGY.md`](docs/UPDATE-STRATEGY.md)。
 
@@ -38,25 +38,27 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
 │   ├── SECURITY.md                 ← 威胁模型与已实施的安全控制
 │   ├── ROADMAP.md                  ← 任务分块（本项目的推进方式）
 │   ├── BUILD.md                    ← 本地与 CI 构建、签名、发版 SOP
+│   ├── CI-WORKFLOW.md              ← CI 工作流为何未就位、如何启用
 │   ├── APP-MANIFEST.md             ← 远程配置清单（app-manifest.json）契约
 │   ├── FEATURE-MATRIX.md           ← 网站功能 ↔ 壳支持情况 台账
 │   └── chunks/CHUNK-0N-REPORT.md   ← 每一块的开发说明
-├── .github/workflows/android.yml   ← CI：构建 / 测试 / 打 tag 自动发 Release
+├── ci/android.yml                  ← ⚠️ 待激活的 CI 工作流（见 docs/CI-WORKFLOW.md）
 ├── settings.gradle.kts / build.gradle.kts / gradle.properties / version.properties
 └── app/                            ← Android 模块
     ├── build.gradle.kts
     ├── proguard-rules.pro
     └── src/main/
         ├── AndroidManifest.xml
-        ├── assets/                 ← （预留）本地兜底页
         ├── java/com/nhyzcms/clubapp/
         │   ├── MainActivity.kt          入口：装载 WebView 与导航策略
-        │   ├── shell/AppConfig.kt       站点地址、UA 标记、Host 白名单
-        │   ├── shell/WebShellClient.kt  导航拦截 / 外链 / TLS 失败处理
-        │   ├── shell/WebShellChromeClient.kt  进度回传
-        │   └── update/              ← （区块 3）更新检查器
-        └── res/                    ← 字符串、主题（跟随系统深色）、网络
-安全配置、图标
+        │   └── shell/
+        │       ├── AppConfig.kt         站点地址、UA 标记、Host 白名单
+        │       ├── NavPolicy.kt         导航裁决（纯函数，可单测）
+        │       ├── ShellErrorKind.kt    错误分类
+        │       ├── WebShellClient.kt    导航拦截 / 外链 / TLS 失败处理
+        │       └── WebShellChromeClient.kt  进度回传 / 控制台日志
+        └── res/                         字符串、主题（跟随系统深色）、
+                                         网络安全配置、纯矢量图标、主界面布局
 ```
 
 ## 4. 快速开始
@@ -77,8 +79,12 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 | 触发 | 行为 |
 |---|---|
-| push / PR | `assembleDebug`（+ lint 单元测试），失败即红 |
+| push / PR | `assembleDebug`，失败即红 |
 | 推送 tag `vX.Y.Z` | `assembleRelease`（读取 Secrets 签名）→ 自动创建 GitHub Release 并附 APK + SHA-256 |
+
+> ⚠️ **工作流当前处于待激活状态**（放在 `ci/android.yml`）：GitHub 要求写入
+> `.github/workflows/` 的凭据具备 `workflow` 权限，当前 token 没有。
+> 启用方法（二选一）见 [`docs/CI-WORKFLOW.md`](docs/CI-WORKFLOW.md)。
 
 ### 4.3 改站点地址
 
@@ -98,7 +104,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## 6. 安全红线（详见 docs/SECURITY.md）
 
 - 仅 HTTPS，明文流量全站禁止（`cleartextTrafficPermitted=false`）；
-- **不做证书固定**：站点证书是 90 天 ZeroSSL DV，固定必然在换证日砖掉；改为"HTTPS 强制 + 系统信任链 + TLS 失败明确报错"；
+- **不做证书固定**：站点证书是 90 天 ZeroSSL DV，固定必然在换证日砖掉；改为「HTTPS 强制 + 系统信任链 + TLS 失败明确报错」；
 - 不信任用户安装的 CA（关闭 user trust anchors），防中间人；
 - 站内导航白名单 = 本站 host；其它域名一律交给系统浏览器，未知 scheme 一律拦截；
 - 更新包必须**校验 sha256 + 签名一致**才允许安装；安装来源链接只允许本站 / GitHub Releases；
@@ -109,8 +115,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 | 区块 | 内容 | 状态 |
 |---|---|---|
-| 1 | 整体骨架：可编译的最小壳 + 文档 + CI | ✅ 本 PR |
-| 2 | 全部功能能力：文件上传/下载、相机、权限、长按保存、分享 | ⏳ |
+| 1 | 整体骨架：可编译的最小壳 + 文档 + CI | ✅ 已完成（见 [报告](docs/chunks/CHUNK-01-REPORT.md)） |
+| 2 | 全部功能能力：文件上传/下载、相机、权限、长按保存、分享 | ⏳ 下一块 |
 | 3 | 三级更新机制（manifest + APK 自升级） | ⏳ |
 | 4 | 原生手感：沉浸式、下拉刷新、手势返回、启动页、主题跟随 | ⏳ |
 | 5 | 站内消息与角标（实时/通知） | ⏳ |
@@ -125,7 +131,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## 8. 维护者 30 分钟上手
 
 1. 读 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 第 1~3 节（分层 + 契约）；
-2. 读 [`docs/UPDATE-STRATEGY.md`](docs/UPDATE-STRATEGY.md) 的决策表，理解"改什么要发 APK"；
+2. 读 [`docs/UPDATE-STRATEGY.md`](docs/UPDATE-STRATEGY.md) 的决策表，理解「改什么要发 APK」；
 3. 跑一次 `gradle :app:assembleDebug`，装到真机，确认能登录、能滚动、能返回；
 4. 读 [`docs/SECURITY.md`](docs/SECURITY.md) 末尾的**改代码自查清单**——每次提交前过一遍；
 5. 想动手就挑 [`docs/ROADMAP.md`](docs/ROADMAP.md) 里状态为 ⏳ 的区块，一区块一 PR。
@@ -139,6 +145,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | [SECURITY.md](docs/SECURITY.md) | 威胁模型、安全控制、自查清单 |
 | [ROADMAP.md](docs/ROADMAP.md) | 分块计划与验收标准 |
 | [BUILD.md](docs/BUILD.md) | 构建、签名、版本号规则、发布步骤 |
+| [CI-WORKFLOW.md](docs/CI-WORKFLOW.md) | CI 工作流的启用方式 |
 | [APP-MANIFEST.md](docs/APP-MANIFEST.md) | 远程配置清单字段契约 |
 | [FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md) | 网站功能覆盖台账 |
 
