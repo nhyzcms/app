@@ -109,7 +109,7 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 | Cookie 属性 | 需网站确认 `SESSION_COOKIE_SECURE/HTTPONLY/SAMESITE` | 建议 `Secure=True, HttpOnly=True, SameSite=Lax` |
 | CSP | 无 | 可评估（注意不要打断 Marzipano/live2d） |
 | `X-Frame-Options` | `SAMEORIGIN` | 保持 |
-| `app-update/` 目录 | 已备好片段与脚本（区块 3，**待部署**） | 只读、无目录列表、无执行权限、只放 JSON 与 APK |
+| `app-update/` 目录 | ✅ 已部署（2026-10-11：`root:nginx 0750`，文件 0640，只读） | 只读、无目录列表、无执行权限、只放 JSON 与 APK |
 | nginx `server_tokens` | `off` | 保持 |
 
 ---
