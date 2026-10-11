@@ -6,16 +6,18 @@
 #   这个脚本把踩过的坑固化成规则（每踩一个新坑，就往下面加一条）。
 #
 # 用法： bash scripts/preflight.sh
-# 后续：区块 9 会把它接入 CI，在 Gradle 之前先跑。
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
 fail=0
 err() { echo "[预检][失败] $*"; fail=1; }
 
+# 注：下面每个 python 检查都带 2>&1。python 的 sys.exit("消息") 是写到 stderr 的，
+# 不重定向就会丢掉最关键的“哪一行、什么原因”（区块 2 才发现，之前只有空消息）。
+
 # ── 1. XML：必须能解析，且注释里不能出现连续两个短横线 （AAPT 会直接中断构建）──
 while IFS= read -r f; do
-  out=$(python3 - "$f" <<'PY'
+  out=$(python3 - "$f" 2>&1 <<'PY'
 import sys, xml.dom.minidom
 p = sys.argv[1]
 raw = open(p, encoding="utf-8").read()
@@ -34,6 +36,51 @@ while i != -1:
 PY
 ) || err "$f：$out"
 done < <(find app/src/main -name '*.xml' | sort)
+
+# ── 1b. Kotlin 块注释：里面不能出现「斜杠 + 星号」（Kotlin 块注释会嵌套，会把整个文件吞掉）──
+#   区块 2 踩过：KDoc 里写了 MIME 通配示例 → CI 报 “Unclosed comment” +
+#   MainActivity 里 shouldOfferCapture “Unresolved reference”，排查很久。
+while IFS= read -r f; do
+  out=$(python3 - "$f" 2>&1 <<'PY'
+import sys
+p = sys.argv[1]
+raw = open(p, encoding="utf-8").read()
+OP = "/" + "*"
+CL = "*" + "/"
+i, n = 0, len(raw)
+while i < n:
+    c = raw[i]
+    nxt = raw[i + 1] if i + 1 < n else ""
+    if c == "/" and nxt == "/":              # 行注释：跳到行尾（行注释不会嵌套，安全）
+        k = raw.find("\n", i)
+        i = n if k == -1 else k + 1
+    elif c == "/" and nxt == "*":            # 块注释
+        j = raw.find(CL, i + 2)
+        if j == -1:
+            sys.exit("块注释未闭合（可能是嵌套的斜杠加星号，或漏了结束符）")
+        if OP in raw[i + 2:j]:
+            line = raw[:i].count("\n") + 1
+            sys.exit("第 %d 行起的块注释里出现了斜杠加星号：Kotlin 块注释会嵌套，会把文件剩余部分全吞掉" % line)
+        i = j + 2
+    elif c == '"':                            # 字符串字面量（含三引号）整体跳过，里面的符号不算
+        if raw[i:i + 3] == '"""':
+            k = raw.find('"""', i + 3)
+            i = n if k == -1 else k + 3
+        else:
+            i += 1
+            while i < n and raw[i] != '"':
+                i += 2 if raw[i] == "\\" else 1
+            i += 1
+    elif c == "'":                            # 字符字面量
+        i += 1
+        while i < n and raw[i] != "'":
+            i += 2 if raw[i] == "\\" else 1
+        i += 1
+    else:
+        i += 1
+PY
+) || err "$f：$out"
+done < <(find app/src/main/java app/src/test/java -name '*.kt' 2>/dev/null | sort)
 
 # ── 2. Kotlin 里引用的 R.xxx 必须在资源里真实存在 ──
 python3 - <<'PY' || fail=1
@@ -101,13 +148,55 @@ if errors:
 print(f"R.* 引用检查通过（资源总数：{sum(len(v) for v in known.values())}）")
 PY
 
-# ── 3. 已知陷阱（每踩一次就加一条）────────────────────────────────────
-if grep -rn "setWebViewClient(null)" app/src/main/java >/dev/null 2>&1; then
+# ── 3. 已知陷阱（每踩一次就加一条）──────────────────────────────────────
+#
+# 【重要】代码模式只在“非注释行”里搜。
+#   我们习惯在注释里写“这里绝不能调 handler.proceed()”这类警示语，
+#   直接全文 grep 会让自己的警示注释触发规则（区块 1、区块 2 各踩过一次）。
+code_grep() {
+  local pattern="$1"
+  local path="${2:-app/src/main/java}"
+  grep -rn --include='*.kt' -E "$pattern" "$path" 2>/dev/null \
+    | grep -vE ':[0-9]+:[[:space:]]*(//|\*|/\*)' \
+    || true
+}
+
+if [ -n "$(code_grep 'setWebViewClient\(null\)')" ]; then
   err "setWebViewClient 不接受 null（API 35 参数是 @NonNull），请改用空实现或直接不设"
 fi
-if grep -rnE "\bsafeBrowsingEnabled[[:space:]]*=" app/src/main/java >/dev/null 2>&1; then
+if [ -n "$(code_grep '\bsafeBrowsingEnabled[[:space:]]*=')" ]; then
   err "WebSettings.safeBrowsingEnabled 没有 getter，不能用 Kotlin 属性语法，请改用 setSafeBrowsingEnabled(...)"
 fi
+if [ -n "$(code_grep 'addJavascriptInterface')" ]; then
+  err "禁止 addJavascriptInterface（安全文档第 4 节：桥接只能走 WebViewCompat.addWebMessageListener 并按 origin 限定）"
+fi
+if [ -n "$(code_grep '\.proceed\(\)')" ]; then
+  err "onReceivedSslError 里绝不能调 handler.proceed()（安全文档第 2 节：TLS 失败必须显式失败）"
+fi
+
+# 3.1 存储/媒体类权限一个都不要（安全文档第 2、7 节；区块 2 定调）
+if grep -nE '<uses-permission[^>]*(READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|READ_MEDIA_|MANAGE_EXTERNAL_STORAGE|ACCESS_MEDIA_LOCATION)' \
+     app/src/main/AndroidManifest.xml >/dev/null 2>&1; then
+  err "清单里出现了存储/媒体类权限：文件选择走系统 SAF、下载走 DownloadManager 即可，不需要它们（docs/SECURITY.md 第 2 节）"
+fi
+
+# 3.2 FileProvider 三处必须一致（不一致时只有真机运行才会报 SecurityException）
+if grep -rq "getUriForFile" app/src/main/java; then
+  grep -qF 'android:authorities="${applicationId}.fileprovider"' app/src/main/AndroidManifest.xml \
+    || err "用了 getUriForFile，但清单里没有 ${applicationId}.fileprovider 这套 authority"
+  grep -rq "BuildConfig.APPLICATION_ID" app/src/main/java/com/nhyzcms/clubapp/shell \
+    || err "FileProvider authority 必须用 BuildConfig.APPLICATION_ID 拼（debug 变体带 .debug 后缀，写死包名会在运行时炸）"
+  [ -f app/src/main/res/xml/file_paths.xml ] \
+    || err "用了 FileProvider，但缺 app/src/main/res/xml/file_paths.xml"
+fi
+
+# 3.3 写公共下载目录必须按 SDK 版本分支（API 26~28 会 SecurityException）
+if grep -rq "setDestinationInExternalPublicDir" app/src/main/java; then
+  grep -rq "Build.VERSION.SDK_INT" app/src/main/java/com/nhyzcms/clubapp/shell/DownloadStarter.kt \
+    || err "setDestinationInExternalPublicDir 必须按 Build.VERSION.SDK_INT 分支（见 shell/DownloadPolicy）"
+fi
+
+# 3.4 密钥 / 本地配置不得入库
 for f in $(find . -name '*.jks' -o -name '*.keystore' -o -name 'local.properties' | grep -v '^\./\.git/'); do
   err "仓库里出现了密钥/本地配置类文件：$f"
 done

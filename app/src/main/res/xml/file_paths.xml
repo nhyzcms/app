@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 可共享路径白名单（拍照临时文件）。
+
+  只暴露 cacheDir/capture/ 一个目录：相机 App 拿到的是该目录下某张照片的 content URI，
+  既不需要存储权限，也不会把 App 私有目录暴露出去（见 docs/SECURITY.md 第 2 节）。
+  新增可共享目录前必须先想清楚：这里每多一行，就等于多一个对外可见的路径。
+-->
+<paths>
+    <cache-path name="capture" path="capture/" />
+</paths>

@@ -42,23 +42,32 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
 │   ├── APP-MANIFEST.md             ← 远程配置清单（app-manifest.json）契约
 │   ├── FEATURE-MATRIX.md           ← 网站功能 ↔ 壳支持情况 台账
 │   └── chunks/CHUNK-0N-REPORT.md   ← 每一块的开发说明
-├── .github/workflows/android.yml   ← CI：debug 构建 / tag 自动发 Release
+├── .github/workflows/android.yml   ← CI：预检 + 单测 + debug 构建 / tag 自动发 Release
 ├── settings.gradle.kts / build.gradle.kts / gradle.properties / version.properties
+├── scripts/                        ← preflight.sh（静态预检）、CI 辅助脚本
 └── app/                            ← Android 模块
     ├── build.gradle.kts
     ├── proguard-rules.pro
-    └── src/main/
-        ├── AndroidManifest.xml
-        ├── java/com/nhyzcms/clubapp/
-        │   ├── MainActivity.kt          入口：装载 WebView 与导航策略
-        │   └── shell/
-        │       ├── AppConfig.kt         站点地址、UA 标记、Host 白名单
-        │       ├── NavPolicy.kt         导航裁决（纯函数，可单测）
-        │       ├── ShellErrorKind.kt    错误分类
-        │       ├── WebShellClient.kt    导航拦截 / 外链 / TLS 失败处理
-        │       └── WebShellChromeClient.kt  进度回传 / 控制台日志
-        └── res/                         字符串、主题（跟随系统深色）、
-                                         网络安全配置、纯矢量图标、主界面布局
+    ├── src/main/
+    │   ├── AndroidManifest.xml
+    │   ├── java/com/nhyzcms/clubapp/
+    │   │   ├── MainActivity.kt          入口：装载 WebView、错误面板、能力接线
+    │   │   └── shell/
+    │   │       ├── AppConfig.kt             站点地址、UA 标记、Host 白名单
+    │   │       ├── NavPolicy.kt             导航裁决（纯函数，可单测）
+    │   │       ├── ShellErrorKind.kt        错误分类
+    │   │       ├── WebShellClient.kt        导航拦截 / 外链 / TLS 失败处理
+    │   │       ├── WebShellChromeClient.kt  进度 / 控制台日志 / 文件选择钩子
+    │   │       ├── FileChooserHost.kt       input[type=file] 入口（回调恰好一次）
+    │   │       ├── CameraCapture.kt         拍照：FileProvider 临时文件 + 相机 Intent
+    │   │       ├── PermissionsPolicy.kt     运行时权限策略（只申请相机）
+    │   │       ├── UploadLimit.kt           20 MB 上传上限的本地前置判定
+    │   │       ├── DownloadPolicy.kt        下载落盘 / 文件名 / 可下载性（纯函数）
+    │   │       ├── DownloadStarter.kt       交给系统 DownloadManager（带会话 Cookie）
+    │   │       └── LongPressPolicy.kt       长按命中判定（图片 / 链接）
+    │   └── res/                         字符串、主题（跟随系统深色）、网络安全配置、
+    │                                    FileProvider 路径、纯矢量图标、主界面布局
+    └── src/test/java/…                  纯逻辑单测（不需要设备；`gradle :app:testDebugUnitTest`）
 ```
 
 ## 4. 快速开始
@@ -69,6 +78,12 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
 # 需要 JDK 17 + Android SDK（compileSdk 35）
 gradle :app:assembleDebug          # 产物 app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+# 提交前必跑：静态预检（5 秒，不需要 JDK/SDK）
+bash scripts/preflight.sh
+
+# 纯逻辑单测（纯函数，不需要设备）
+gradle :app:testDebugUnitTest
 ```
 
 > 本仓库**不提交 `gradle-wrapper.jar`**（CI 通过 `gradle/actions/setup-gradle` 指定
@@ -79,12 +94,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 | 触发 | 行为 |
 |---|---|
-| 分支 push / PR | `assembleDebug`，失败即红；产物为 artifact `app-debug-apk`（14 天） |
-| 推送 tag `vX.Y.Z` | `assembleRelease`（读取 Secrets 签名）→ 自动创建 GitHub Release 并附 APK + SHA-256 |
+| 分支 push / PR | 预检 → `testDebugUnitTest` → `assembleDebug`；失败即红，产物为 artifact `app-debug-apk`（14 天） |
+| 推送 tag `vX.Y.Z` | 预检 → 单测 → `assembleRelease`（读取 Secrets 签名）→ 自动创建 GitHub Release 并附 APK + SHA-256 |
 
-> 发 Release 必须先配好 4 个 Secrets，否则 `release` 作业会**主动失败**
-> （宁可失败，也不发出装不上的未签名包）。步骤见 [`docs/BUILD.md`](docs/BUILD.md) §3、
-> 说明见 [`docs/CI-WORKFLOW.md`](docs/CI-WORKFLOW.md)。
+> 构建失败时关键报错会自动贴成 **PR 评论**（Actions 原始日志需仓库管理员权限，PR 评论才读得到）。
 
 ### 4.3 改站点地址
 
@@ -107,6 +120,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **不做证书固定**：站点证书是 90 天 ZeroSSL DV，固定必然在换证日砖掉；改为「HTTPS 强制 + 系统信任链 + TLS 失败明确报错」；
 - 不信任用户安装的 CA（关闭 user trust anchors），防中间人；
 - 站内导航白名单 = 本站 host；其它域名一律交给系统浏览器，未知 scheme 一律拦截；
+- **不申请任何存储权限**：文件选择走系统 SAF（按 URI 临时授权）、下载走 `DownloadManager`
+  （Android 10 及以上写公共“下载”目录不需权限）；Android 8/9 降级落到 App 目录。
+  运行时权限只有**相机**（且只在“将要提供拍照入口”时才申请）；
+- 下载必须**手动带会话 Cookie**（DownloadManager 不共享 WebView 的 CookieJar）；
 - 更新包必须**校验 sha256 + 签名一致**才允许安装；安装来源链接只允许本站 / GitHub Releases；
 - 密钥永不入库：keystore 只存在于 GitHub Secrets（base64）；
 - Release 构建关闭 WebView 远程调试（`BuildConfig.DEBUG` 才开）。
@@ -116,8 +133,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | 区块 | 内容 | 状态 |
 |---|---|---|
 | 1 | 整体骨架：可编译的最小壳 + 文档 + CI | ✅ 已完成（[报告](docs/chunks/CHUNK-01-REPORT.md)） |
-| 2 | 全部功能能力：文件上传/下载、相机、权限、长按保存、分享 | ⏳ 下一块 |
-| 3 | 三级更新机制（manifest + APK 自升级） | ⏳ |
+| 2 | 全部功能能力：文件上传/下载、相机、权限、长按保存、分享 | ✅ 代码完成（[报告](docs/chunks/CHUNK-02-REPORT.md)）；🟡 待真机验收 |
+| 3 | 三级更新机制（manifest + APK 自升级） | ⏳ 下一块 |
 | 4 | 原生手感：沉浸式、下拉刷新、手势返回、启动页、主题跟随 | ⏳ |
 | 5 | 站内消息与角标（实时/通知） | ⏳ |
 | 6 | 弱网与性能（3M 带宽适配、缓存、预加载） | ⏳ |
@@ -126,7 +143,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | 9 | 测试与验收（手测清单 / 回归流程 / E2E） | ⏳ |
 | 10 | 长期维护手册与交接 | ⏳ |
 
-分块依据与验收标准见 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
+分块依据与验收标准见 [`docs/ROADMAP.md`](docs/ROADMAP.md)，功能台账见 [`docs/FEATURE-MATRIX.md`](docs/FEATURE-MATRIX.md)。
 
 ## 8. 维护者 30 分钟上手
 
@@ -148,6 +165,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | [CI-WORKFLOW.md](docs/CI-WORKFLOW.md) | CI 行为与发版前置条件 |
 | [APP-MANIFEST.md](docs/APP-MANIFEST.md) | 远程配置清单字段契约 |
 | [FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md) | 网站功能覆盖台账 |
+| [chunks/CHUNK-02-REPORT.md](docs/chunks/CHUNK-02-REPORT.md) | 区块 2（文件/拍照/下载/长按）交付说明 |
 
 ---
 

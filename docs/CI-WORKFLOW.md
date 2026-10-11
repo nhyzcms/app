@@ -6,10 +6,17 @@
 
 ## 1. 它做什么
 
-| 事件 | 作业 | 产物 |
-|---|---|---|
-| 任意分支 push / PR / 手动触发 | `debug` | `app-debug-apk`（artifact，保留 14 天） |
-| 推 tag `vX.Y.Z` | `release` | 签名 APK + `.sha256`（artifact 90 天），并自动创建 GitHub Release |
+| 事件 | 作业 | 步骤 | 产物 |
+|---|---|---|---|
+| 任意分支 push / PR / 手动触发 | `debug` | 预检 → 单测 → `assembleDebug` | `app-debug-apk`（artifact，保留 14 天） |
+| 推 tag `vX.Y.Z` | `release` | 预检 → 单测 → `assembleRelease`（读 Secrets 签名） | 签名 APK + `.sha256`（artifact 90 天）+ GitHub Release |
+
+**两个“先把关”的步骤**（都是为了不浪费构建周期）：
+
+1. `scripts/preflight.sh`：静态预检，5 秒，抦下 XML/资源引用/已知陷阱；
+2. `gradle :app:testDebugUnitTest`：区块 2 起的纯逻辑单测（不需要设备）。
+   * debug 作业放在 APK 之前：测试挂了就不用再打包；
+   * release 作业作为**发版阻断**：测试不过不发版。
 
 ## 2. 首次启用时踩的坑（沿革，留着以后别再踩）
 
@@ -46,3 +53,13 @@
 - 本仓库**不提交 `gradle-wrapper.jar`**，CI 用 `gradle/actions/setup-gradle` 安装 Gradle 8.13；
 - 同一个 ref 重复推送会取消上一次未跑完的任务（`concurrency`），节约额度；
 - 如果构建失败，先看 “构建 debug APK” 这一步的报错；常见原因见 [BUILD.md](BUILD.md) §7。
+
+## 5. 失败了怎么读报错（重要）
+
+Actions 的**原始日志需要仓库管理员权限**才能通过 API 读，PR 评论才是公开可读的通道。因此：
+
+- `debug` 作业失败时，`scripts/ci-extract-errors.sh` 会把 `unit-test.log` 与 `build.log` 的
+  关键报错一起贴成 **PR 评论**（含 `FAILED` / `AssertionError` / `expected:<` 等单测失败行）；
+- 在非 PR 触发（例如直接 push 或手动跑）时，只输出到控制台，需要你在网页上展开看。
+
+> 本地没有 Android SDK 时也能做的验证：`bash scripts/preflight.sh`（5 秒）。

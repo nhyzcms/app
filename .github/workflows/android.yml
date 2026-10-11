@@ -1,8 +1,8 @@
 name: Android
 
 # 触发策略：
-#   * 任意分支 push / PR → 先静态预检，再建 debug APK
-#   * 推 tag vX.Y.Z      → 建签名 release APK 并自动创建 GitHub Release
+#   * 任意分支 push / PR → 静态预检 → 纯逻辑单测 → 建 debug APK
+#   * 推 tag vX.Y.Z      → 静态预检 → 单测 → 建签名 release APK 并自动创建 GitHub Release
 #   * 手动 workflow_dispatch 便于重跑
 #
 # 【为何失败时要贴日志到 PR 评论】
@@ -14,6 +14,10 @@ name: Android
 #   本项目没有本地 Android 构建环境，若靠“跑一遍 CI 才知道错在哪”，
 #   一次小错误就要白白消耗一个完整的构建周期（~2 分钟）。
 #   预检只需要 python3，5 秒内就能抦下 XML 语法/注释、资源引用、已知陷阱。
+#
+# 【为何要在 APK 之前跑单测】
+#   区块 2 起，纯逻辑（上传上限、文件名清洗、导航裁决…）有了 JVM 单测。
+#   先跑单测：测试挂了就不用再花时间打包装包，反馈也更快。
 #
 # 【已踩过的坑（首次真实编译共失败 6 次，均已修复）】
 #   1) android-actions/setup-android@v3 直接失败——已弃用，改自写脚本；
@@ -74,6 +78,16 @@ jobs:
           echo "--- version.properties ---"
           cat version.properties
 
+      - name: 纯逻辑单测（不需要设备）
+        run: |
+          set +e
+          gradle :app:testDebugUnitTest --stacktrace 2>&1 | tee unit-test.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo "::error::单元测试失败，关键报错已贴到 PR 评论"
+            exit "$code"
+          fi
+
       - name: 构建 debug APK
         run: |
           set +e
@@ -95,7 +109,13 @@ jobs:
             echo "commit: \`${GITHUB_SHA:0:8}\`"
             echo ''
             echo '```text'
-            bash scripts/ci-extract-errors.sh build.log
+            for f in unit-test.log build.log; do
+              if [ -f "$f" ]; then
+                echo "==== 日志：$f ===="
+                bash scripts/ci-extract-errors.sh "$f"
+                echo
+              fi
+            done
             echo '```'
           } > ci-comment.md
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -149,6 +169,18 @@ jobs:
             exit 1
           fi
           echo "VERSION_NAME=$tag" >> "$GITHUB_ENV"
+
+      # —— 单测：不过就不发版 ——
+      - name: 纯逻辑单测（发版阻断）
+        run: |
+          set +e
+          gradle :app:testDebugUnitTest --stacktrace 2>&1 | tee unit-test.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo "::error::单元测试失败：拒绝发布（关键报错如下）"
+            bash scripts/ci-extract-errors.sh unit-test.log
+            exit "$code"
+          fi
 
       # —— 签名：缺少 Secrets 就拒绝发布（绝不发出装不上的包）——
       - name: 准备签名 keystore

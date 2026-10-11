@@ -7,6 +7,7 @@
 #   这里先按关键模式过滤，再附日志尾部，保证一屏就能看到问题。
 #
 # 用法：bash scripts/ci-extract-errors.sh build.log
+#       bash scripts/ci-extract-errors.sh unit-test.log   （区块 2 起的单测日志）
 set -uo pipefail
 
 LOG="${1:-build.log}"
@@ -15,8 +16,8 @@ if [ ! -f "$LOG" ]; then
   exit 0
 fi
 
-# 关键报错模式：Kotlin/Javac 编译错误、Gradle 失败点、AAPT/资源错误、依赖解析失败
-PATTERN='(^e: |: error: |^Error: |Error: |FAILURE: Build failed|What went wrong|Execution failed for task|Caused by:|Android resource|AAPT|Could not (resolve|find|determine|download)|Unsupported |Duplicate class|Invalid |SDK location)'
+# 关键报错模式：Kotlin/Javac 编译错误、Gradle 失败点、AAPT/资源错误、依赖解析失败、单测失败
+PATTERN='(^e: |: error: |^Error: |Error: |FAILURE: Build failed|What went wrong|Execution failed for task|Caused by:|Android resource|AAPT|Could not (resolve|find|determine|download)|Unsupported |Duplicate class|Invalid |SDK location|FAILED|AssertionError|expected:<|junit\.framework|ClassNotFoundException)'
 
 echo '#### 关键报错行（已滤掉堆栈帧）'
 if grep -aE "$PATTERN" "$LOG" | grep -av '^[[:space:]]*at ' | tail -n 25 | cut -c1-300 | grep -q .; then

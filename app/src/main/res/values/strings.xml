@@ -13,11 +13,38 @@
     <string name="action_retry">重试</string>
     <string name="action_open_browser">用浏览器打开</string>
     <string name="action_clear_cache">清除缓存（会登出）</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_open_settings">去设置</string>
 
     <!-- 提示 -->
     <string name="toast_external_opened">已在系统浏览器打开</string>
     <string name="toast_link_blocked">已拦截不支持的链接</string>
-    <string name="toast_download_todo">文件下载将在后续版本支持</string>
+    <string name="toast_no_file_picker">设备上没有可用的文件选择器</string>
+    <string name="toast_camera_denied">未授予相机权限，本次只能选择已有文件</string>
+    <string name="toast_download_started">已开始下载，完成后可在通知栏打开</string>
+    <string name="toast_download_started_app_dir">已开始下载（本机系统较旧，文件存在应用目录，可从通知栏打开或分享）</string>
+    <string name="toast_download_failed">无法开始下载，请稍后再试</string>
+    <string name="toast_download_unsupported">该链接暂不支持下载（仅支持 https 直链）</string>
+    <string name="toast_copied">已复制链接</string>
+    <string name="toast_share_unavailable">没有可用的分享应用</string>
+
+    <!-- 长按菜单（图片 / 链接） -->
+    <string name="dialog_image_actions">图片</string>
+    <string name="dialog_link_actions">链接</string>
+    <string name="dialog_share_link">分享链接</string>
+    <string name="action_save_image">保存图片</string>
+    <string name="action_share_link">分享链接</string>
+    <string name="action_copy_link">复制链接</string>
+
+    <!-- 上传体积前置提示（站点上限 20 MB，见 shell/UploadLimit） -->
+    <string name="upload_too_large_title">超过上传上限</string>
+    <string name="upload_too_large_message">所选文件共 %1$s，超过本站 20 MB 的上限。继续上传可能被服务器拒绝，建议先压缩或裁剪。</string>
+    <string name="action_upload_continue">仍然上传</string>
+    <string name="action_upload_cancel">换一个文件</string>
+
+    <!-- 相机权限被“禁止且不再询问”后的引导 -->
+    <string name="camera_denied_title">需要相机权限</string>
+    <string name="camera_denied_message">拍照上传需要相机权限。可在系统设置里开启后重试，也可以直接选择已有文件。</string>
 
     <!-- 无障碍 -->
     <string name="cd_webview">网站内容</string>
