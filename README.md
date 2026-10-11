@@ -159,7 +159,7 @@ gradle :app:testDebugUnitTest
 |---|---|---|
 | 1 | 整体骨架：可编译的最小壳 + 文档 + CI | ✅ 已完成（[报告](docs/chunks/CHUNK-01-REPORT.md)） |
 | 2 | 全部功能能力：文件上传/下载、相机、权限、长按保存、分享 | ✅ 代码完成（[报告](docs/chunks/CHUNK-02-REPORT.md)）；🟡 待真机验收 |
-| 3 | 三级更新机制（manifest + APK 自升级） | 🟡 代码完成（[报告](docs/chunks/CHUNK-03-REPORT.md)）；待真机验收 + 服务器加 nginx location |
+| 3 | 三级更新机制（manifest + APK 自升级） | 🟡 代码完成 + 清单端点已部署（2026-10-11）（[报告](docs/chunks/CHUNK-03-REPORT.md)）；待真机验收 |
 | 4 | 原生手感：沉浸式、下拉刷新、手势返回、启动页、主题跟随 | ⏳ |
 | 5 | 站内消息与角标（实时/通知） | ⏳ |
 | 6 | 弱网与性能（3M 带宽适配、缓存、预加载） | ⏳ |
