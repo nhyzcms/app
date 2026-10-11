@@ -18,16 +18,11 @@ import com.nhyzcms.clubapp.R
 import com.nhyzcms.clubapp.shell.update.UpdatePolicy
 
 /**
- * 「原生手感」宿主（区块 4）：把窗口配色、下拉刷新、首屏骨架、返回顶部按钮、
- * 返回键判定、网页状态探测这些接线收在这一个类里，MainActivity 只留调用点。
+ * 「原生手感」宿主（区块 4）：窗口配色、下拉刷新、首屏骨架、返回顶部按钮、返回键判定、
+ * 网页状态探测的接线都收在这里，MainActivity 只留调用点。
  *
- * 为什么单独一个类：MainActivity 已经承载了区块 2/3 的能力接线，再往里堆区块 4
- * 会变成谁都不敢改的巨型文件。这里只依赖传入的几个视图与两个回调
- * （读清单开关、重新加载页面），不碰 Activity 的业务状态。
- *
- * 安全边界：本类执行的两段 JS 都是**固定常量脚本**
- * （[PageStateProbe.PROBE_SCRIPT] 与 [SCROLL_TO_TOP_SCRIPT]），不拼接任何变量，
- * 也不使用 addJavascriptInterface（见 docs/SECURITY.md 第 4 节）。
+ * 安全边界：本类执行的两段 JS 都是固定常量脚本（[PageStateProbe.PROBE_SCRIPT] 与
+ * [SCROLL_TO_TOP_SCRIPT]），不拼接变量，也不用 addJavascriptInterface（SECURITY 第 4.1 节）。
  */
 class FeelHost(
     private val activity: AppCompatActivity,
@@ -37,9 +32,9 @@ class FeelHost(
     private val skeleton: View,
     private val fabButton: ImageView,
     private val errorPanel: View,
-    /** 读清单开关（`updates.flags()`）。不缓存：清单可能被更新流程换掉。 */
+    /** 读清单开关（updates.flags()）。不缓存：清单可能被更新流程换掉。 */
     private val flags: () -> Map<String, Boolean>,
-    /** 下拉刷新时重新加载当前页（由 Activity 提供，壳不干预加载策略）。 */
+    /** 下拉刷新时重新加载当前页（由 Activity 提供）。 */
     private val reload: () -> Unit,
 ) {
 
@@ -64,10 +59,11 @@ class FeelHost(
         )
         // 先按系统深浅色兜底；等网页的 meta theme-color 探测回来再覆盖。
         applyPalette(PageTheme.decide(null, isSystemDark()))
-        ViewCompat.setOnApplyWindowInsetsListener(rootView) { view, insets ->
+        ViewCompat.setOnApplyWindowInsetsListener(rootView) { _, insets ->
             systemBarsBottomPx = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
             applyOverlayMargins()
-            view.onApplyWindowInsets(insets)
+            // 返回 insets（不消费），交回系统继续下发。
+            insets
         }
 
         // 手势只在网页已回到顶部时才交给刷新容器（判断是同步的，见 ScrollAwareWebView）。
@@ -119,10 +115,7 @@ class FeelHost(
         probe.probeNow()
     }
 
-    /**
-     * 错误面板出现/消失时同步浮层状态：
-     * 面板盖着时不该再有刷新圈或悬浮按钮（重试按钮才是唯一出路）。
-     */
+    /** 错误面板出现时同步浮层状态：面板盖着时不该有刷新圈或悬浮按钮。 */
     fun onErrorPanelChanged(visible: Boolean) {
         if (visible) {
             refreshStartedAtMs = 0L
@@ -131,10 +124,7 @@ class FeelHost(
         }
     }
 
-    /**
-     * 返回键决策（并维护「再按一次退出」的时间窗）：
-     * 能后退就后退；在起始页时第一次只提示，[BackExitPolicy.CONFIRM_WINDOW_MS] 内再按才退出。
-     */
+    /** 返回键决策（含「再按一次退出」的时间窗维护）。 */
     fun decideBack(canGoBack: Boolean): BackExitPolicy.Action {
         val now = SystemClock.elapsedRealtime()
         val action = BackExitPolicy.decide(canGoBack, lastExitConfirmAtMs, now)
@@ -192,7 +182,7 @@ class FeelHost(
         }
     }
 
-    /** 返回顶部按钮的显隐（阈值判定在 [FabPolicy]，这里只管动画与错误面板的优先级）。 */
+    /** 返回顶部按钮的显隐（阈值判定在 [FabPolicy]）。 */
     private fun updateBackToTopButton(offset: Int) {
         val enabled = flag("showBackToTop", true) && errorPanel.visibility != View.VISIBLE
         setBackToTopVisible(FabPolicy.shouldShow(offset, fabThresholdPx, enabled, pageLoaded))
@@ -223,12 +213,7 @@ class FeelHost(
         }.start()
     }
 
-    /**
-     * 滚回顶部。
-     *
-     * 安全边界：执行的是固定常量脚本（[SCROLL_TO_TOP_SCRIPT]），不拼接任何变量，
-     * 也不通过 addJavascriptInterface 暴露原生能力（docs/SECURITY.md 第 4 节）。
-     */
+    /** 滚回顶部（固定常量脚本，不拼接变量，见 SECURITY 第 4.1 节）。 */
     private fun scrollToTop() {
         runCatching { webView.evaluateJavascript(SCROLL_TO_TOP_SCRIPT, null) }
     }
