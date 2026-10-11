@@ -49,7 +49,7 @@
 
 ---
 
-## 区块 3 — 三级更新机制（🟡 代码完成，待真机验收 + 服务器配置）
+## 区块 3 — 三级更新机制（🟡 代码完成 + 服务器已部署，待真机验收）
 
 - **目标**：① 网站更新零操作生效（L0）；② 远程开关与强制/灰度（L1）；③ APK 自升级（L2）。
 - **交付物**（实际落地）：
@@ -62,8 +62,8 @@
   - `UpdateController.kt`：检查节流（冷启动 3 s / 前台 30 min）、提示与进度 UI、公告；
   - `scripts/nginx-app-update.conf`、`scripts/publish-apk.sh`、`deploy/app-update/`（清单模板 + 部署说明）。
 - **验收**：① 只改网站 → 重开 App 看到新页面（无需发 APK）；② 把 manifest 的 `latest.versionCode` 调高 → App 提示更新并能安装成功；③ 下载中途杀进程 → 重进可继续/重下；④ 篡改 APK（sha256 不匹配）→ 拒绝安装并告警；⑤ 换签名重打包 → 提示“签名不一致”并拒绝安装。
-- **依赖**：需用户在服务器上新增一个 nginx `location`（只读静态目录）——**报告里已给命令与片段，等确认后执行**。
-- **状态**：代码与单测完成、静态预检通过；服务器侧配置与真机验收待办（见 `docs/chunks/CHUNK-03-REPORT.md`）。
+- **服务器侧**：✅ 已于 2026-10-11 部署完成（nginx `location /app-update/` + `/opt/club/app-update/manifest.json`，`latest: null`；备份 `club.conf.bak.app-update-20261011-225834`）。
+- **状态**：代码/单测/静态预检完成、CI 全绿、服务器已部署；**仅余真机验收**（见 `docs/chunks/CHUNK-03-REPORT.md` §6）。
 
 ---
 
@@ -141,3 +141,5 @@
 | 区块 7 | 生成签名 keystore、配 GitHub Secrets | 私钥不能经过我 |
 | 区块 8 | 网站仓库 PR 合并 | 需你审查 |
 | 全程 | 真机测试 | 我无法在安卓设备上跑 |
+
+> 区块 3 那一项：✅ 已于 2026-10-11 22:58 完成（获用户确认后执行）。
