@@ -7,8 +7,10 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -239,10 +241,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        // WebView 不主动销毁会泄露 Activity
+        // WebView 不主动销毁会泄露 Activity。
+        // ⚠️ 踩坑：API 35 上 setWebViewClient 的参数是 @NonNull，**不能传 null**
+        //（会报 “Null cannot be a value of a non-null type” 而编译失败），
+        // 所以这里放空实现来切断回调，而不是传 null。
         webView.stopLoading()
-        webView.setWebChromeClient(null)
-        webView.setWebViewClient(null)
+        webView.webViewClient = WebViewClient()
+        webView.webChromeClient = WebChromeClient()
         (webView.parent as? android.view.ViewGroup)?.removeView(webView)
         webView.destroy()
         super.onDestroy()
