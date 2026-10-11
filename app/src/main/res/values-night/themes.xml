@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 深色下改用浅色状态栏图标 -->
-    <style name="Theme.ClubApp" parent="Theme.ClubApp.Base">
-        <item name="android:windowLightStatusBar">false</item>
-    </style>
-</resources>
