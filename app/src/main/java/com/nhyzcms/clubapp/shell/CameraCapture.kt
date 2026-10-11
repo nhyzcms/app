@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
-import com.nhyzcms.clubapp.BuildConfig
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -15,8 +14,8 @@ import java.util.concurrent.TimeUnit
  * 拍照直传：相机 App 把照片写进我们自己的 FileProvider 临时文件，
  * 壳拿到 `content://` URI 后交回网页（网页的 tus 客户端负责上传）。
  *
- * 为什么用 FileProvider：不申请任何存储权限，文件只对本 App 与临时授权的相机 App 可见
- * （docs/SECURITY.md §2）。
+ * 为什么用 FileProvider：不用申请存储权限，文件只对本 App 与临时授权的相机 App 可见
+ * （docs/SECURITY.md §2）。authority 的唯一真源在 [AppConfig.FILE_PROVIDER_AUTHORITY]。
  *
  * 临时文件生命周期：
  *  - 建在 `cacheDir/capture/`（系统可回收的缓存目录，不占用户存储）；
@@ -37,7 +36,7 @@ class CameraCapture(private val activity: Activity) {
         val uri = runCatching {
             val file = createTempFile()
             outputFile = file
-            FileProvider.getUriForFile(activity, AUTHORITY, file)
+            FileProvider.getUriForFile(activity, AppConfig.FILE_PROVIDER_AUTHORITY, file)
         }.getOrNull() ?: return null
 
         outputUri = uri
@@ -119,19 +118,10 @@ class CameraCapture(private val activity: Activity) {
         }
     }
 
-    companion object {
-        /**
-         * FileProvider authority，必须与 AndroidManifest 里 provider 的
-         * `android:authorities` 完全一致，否则 getUriForFile 直接抛异常。
-         *
-         * 用 `BuildConfig.APPLICATION_ID` 而不是写死包名：debug 变体带 `.debug` 后缀，
-         * 写死包名会让 debug 包的拍照在运行时炸掉（清单里也是 ${applicationId}.fileprovider）。
-         */
-        val AUTHORITY: String = BuildConfig.APPLICATION_ID + ".fileprovider"
-
-        private const val DIR_NAME = "capture"
-        private const val FILE_PREFIX = "capture_"
-        private const val FILE_SUFFIX = ".jpg"
-        private val STALE_AFTER_MILLIS: Long = TimeUnit.HOURS.toMillis(24)
+    private companion object {
+        const val DIR_NAME = "capture"
+        const val FILE_PREFIX = "capture_"
+        const val FILE_SUFFIX = ".jpg"
+        val STALE_AFTER_MILLIS: Long = TimeUnit.HOURS.toMillis(24)
     }
 }
