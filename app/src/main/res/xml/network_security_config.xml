@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全基线（安全文档 docs/SECURITY.md §2）：
+    1) 禁止明文流量（cleartext）——站点已全量 HTTPS + HSTS；
+    2) 只信任系统根证书（不信任 user），防止设备上被装入的根证书进行流量劫持。
+
+  有意不做证书固定（pinning）：站点是 ZeroSSL DV 证书、SAN 为 IP、90 天必须换发，
+  固定指纹或中间 CA 都会在换证当天让全量用户失联。见 ARCHITECTURE ADR-A03。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!--
+      仅 debug 构建生效：允许 user 根证书，方便用抓包工具调试。release 包不受影响。
+      若需要让 debug 包装载本地 HTTP dev server，把下面的注释打开并填入开发机地址。
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.1.100</domain>
+    </domain-config>
+    -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>

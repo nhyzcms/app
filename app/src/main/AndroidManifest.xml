@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      权限只声明必需的。区块 2 需要相机/文件选择时再逐条加，
+      并且优先用系统 SAF（文件选择器）避免申请宽存储权限。
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:hardwareAccelerated="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ClubApp"
+        android:usesCleartextTraffic="false">
+
+        <!--
+          configChanges：避免旋转/分屏/深色切换时重建 Activity（重建会丢 WebView 页面状态）。
+          launchMode=singleTask：深链复用同一个实例，不会堆出多个 WebView。
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode|density|fontScale"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              深链：从浏览器等处点开本站链接可直接进 App。
+              注意：站点目前用 IP（8.153.145.175），无法做 App Links 官方校验（需域名 + assetlinks.json），
+              所以首次点击时系统会询问"打开方式"。以后换成域名可补 android:autoVerify="true"。
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="8.153.145.175" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
