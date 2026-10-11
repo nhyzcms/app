@@ -1,22 +1,28 @@
 name: Android
 
 # 触发策略：
-#   * 任意分支 push / PR → 只建 debug APK，破了马上知道
+#   * 任意分支 push / PR → 先静态预检，再建 debug APK
 #   * 推 tag vX.Y.Z      → 建签名 release APK 并自动创建 GitHub Release
 #   * 手动 workflow_dispatch 便于重跑
 #
 # 【为何失败时要贴日志到 PR 评论】
 #   Actions 的原始日志需要仓库管理员权限才能通过 API 读取，
 #   而 Step Summary / annotations 都不提供完整报错。
-#   所以失败时用 scripts/ci-extract-errors.sh 抽取关键报错并自动贴成本 PR 评论：
-#   维护者与助手都能直接看到真实报错，不用上去点网页。
+#   所以失败时用 scripts/ci-extract-errors.sh 抽取关键报错并自动贴成本 PR 评论。
 #
-# 【已踩过的坑（别再踩）】
-#   1) android-actions/setup-android@v3 直接失败——已弃用，改为自写脚本；
+# 【为何要先跑 scripts/preflight.sh】
+#   本项目没有本地 Android 构建环境，若靠“跑一遍 CI 才知道错在哪”，
+#   一次小错误就要白白消耗一个完整的构建周期（~2 分钟）。
+#   预检只需要 python3，5 秒内就能抦下 XML 语法/注释、资源引用、已知陷阱。
+#
+# 【已踩过的坑（首次真实编译共失败 6 次，均已修复）】
+#   1) android-actions/setup-android@v3 直接失败——已弃用，改自写脚本；
 #   2) gradle :app:versionInfo 任务不存在（versionInfo 注册在根项目）——已改为纯 shell 打印；
 #   3) runner 默认 ubuntu-latest 将于 2026-10-19 迁到 Ubuntu 26——已固定 ubuntu-24.04；
 #   4) sdkmanager --licenses 在 runner 上会失败——改为直接写 licenses 文件；
-#   5) XML 注释里出现连续两个短横线会让 AAPT 直接中断——见 res/values/colors.xml 里的注记。
+#   5) XML 注释里出现连续两个短横线会让 AAPT 直接中断（已踩两次）；
+#   6) setWebViewClient(null) 编译不过（API 35 参数是 @NonNull）；
+#   7) WebSettings 的 safe browsing 只有 setter 没有 getter，不能用属性语法。
 on:
   push:
     branches: ["**"]
@@ -44,6 +50,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: 静态预检（XML / 资源引用 / 已知陷阱）
+        run: bash scripts/preflight.sh
 
       - name: 安装 JDK 17
         uses: actions/setup-java@v5
@@ -82,7 +91,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           {
-            echo '### ❌ Debug 构建失败'
+            echo '### ❌ Debug 作业失败'
             echo "commit: \`${GITHUB_SHA:0:8}\`"
             echo ''
             echo '```text'
@@ -111,6 +120,9 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+
+      - name: 静态预检（XML / 资源引用 / 已知陷阱）
+        run: bash scripts/preflight.sh
 
       - name: 安装 JDK 17
         uses: actions/setup-java@v5
