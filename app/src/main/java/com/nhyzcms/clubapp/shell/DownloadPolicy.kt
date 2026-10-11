@@ -7,10 +7,12 @@ import java.util.Locale
 /**
  * 下载策略（纯函数，可 JVM 单测）：落盘位置、文件名、可下载性判定。
  *
- * 关键取舍：**一个存储权限都不申请**（docs/SECURITY.md §2、§7）。
- *  - Android 10（API 29）起，DownloadManager 写公共「下载」目录不再需要权限；
- *  - Android 8/9（API 26~28）写公共目录需要 WRITE_EXTERNAL_STORAGE，与安全基线冲突，
- *    因此改为落在 App 自己的外部目录（通知栏依旧可见，可从通知打开/分享）。
+ * 落盘位置的取舍（管理员已确认，2026-10-11）：
+ *  - 优先写公共「下载」目录（用户在系统「下载」App 里能看到）；
+ *  - Android 10（API 29）起不需要任何权限；
+ *  - Android 8/9（API 26~28）需要 WRITE_EXTERNAL_STORAGE（清单里用 maxSdkVersion="28" 限定）；
+ *  - 若用户拒了那个权限，则退回 App 自己的外部目录（依旧能下、通知栏可见、可分享），
+ *    而不是直接失败。
  */
 object DownloadPolicy {
 
@@ -23,26 +25,38 @@ object DownloadPolicy {
     /** 文件名长度上限（含扩展名）：太长会被部分文件系统/下载器拒绝。 */
     const val MAX_NAME_LENGTH = 96
 
+    /** 需要写外部存储权限的最高 SDK 版本（Android 9）。 */
+    const val WRITE_PERMISSION_MAX_SDK = 28
+
     const val REASON_MISSING = "missing-url"
     const val REASON_BLOB = "blob-or-data-url"
     const val REASON_UNSUPPORTED_SCHEME = "unsupported-scheme"
 
     enum class Destination {
-        /** 公共「下载」目录（API 29+，不需要权限）。 */
+        /** 公共「下载」目录（API 29+ 免权限；API ≤ 28 需写权限）。 */
         PUBLIC_DOWNLOADS,
 
-        /** App 自己的外部文件目录（API 26~28，避免申请存储权限）。 */
+        /** App 自己的外部文件目录（权限被拒时的退路）。 */
         APP_EXTERNAL_FILES,
     }
 
-    fun of(sdkInt: Int): Destination =
-        if (sdkInt >= 29) Destination.PUBLIC_DOWNLOADS else Destination.APP_EXTERNAL_FILES
+    /**
+     * 决定落盘位置。
+     *
+     * @param writePermissionGranted 当前是否持有写外部存储权限（API 29+ 传什么都无所谓）。
+     */
+    fun destination(sdkInt: Int, writePermissionGranted: Boolean): Destination =
+        if (sdkInt >= 29 || writePermissionGranted) Destination.PUBLIC_DOWNLOADS
+        else Destination.APP_EXTERNAL_FILES
+
+    /** 是否需要为“写公共下载目录”申请存储权限（只有 Android 8/9 需要）。 */
+    fun needsWritePermission(sdkInt: Int): Boolean = sdkInt <= WRITE_PERMISSION_MAX_SDK
 
     /**
      * 能否交给系统下载器。返回 null 表示可以，否则返回拒绝原因（用于记日志/选文案）。
      *
      * 只接受 https：站点的会话 Cookie 只在 HTTPS 下有效，明文请求也会被
-     * network-security-config 拦掉，早点拒绝比让用户看到「下载失败」更好。
+     * network-security-config 拦掉，早点拒绝比让用户看到“下载失败”更好。
      */
     fun rejectionOf(url: String?): String? {
         val trimmed = url?.trim().orEmpty()
