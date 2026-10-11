@@ -7,8 +7,10 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -24,10 +26,10 @@ import com.nhyzcms.clubapp.shell.WebShellChromeClient
 import com.nhyzcms.clubapp.shell.WebShellClient
 
 /**
- * 壳的入口：一个 Activity + 一个 WebView。
+ * 壳的入口：一个 Activity 加一个 WebView。
  *
- * 职责边界（重要）：本类**不做**任何业务判断（登录、路由、权限），
- * 只负责"把网页跑起来"与"把原生能力接上去"。详见 docs/ARCHITECTURE.md §4。
+ * 职责边界（重要）：本类不做任何业务判断（登录、路由、权限），
+ * 只负责把网页跑起来与把原生能力接上去。详见 docs/ARCHITECTURE.md 第 4 节。
  */
 class MainActivity : AppCompatActivity() {
 
@@ -37,7 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var errorTitle: TextView
     private lateinit var errorMessage: TextView
 
-    /** 最后一次加载/失败的地址，供"重试"与"用浏览器打开"使用。 */
+    /** 最后一次加载或失败的地址，供“重试”与“用浏览器打开”使用。 */
     private var lastUrl: String = AppConfig.START_URL
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,7 +47,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         bindViews()
 
-        // release 包关闭 WebView 远程调试（安全文档 §2）；debug 包保留 chrome://inspect 能力。
+        // release 包关闭 WebView 远程调试（安全文档第 2 节）；debug 包保留 chrome://inspect 能力。
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
 
         configureWebView()
@@ -83,7 +85,7 @@ class MainActivity : AppCompatActivity() {
             javaScriptCanOpenWindowsAutomatically = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
 
-            // 壳只加载网络内容，不需要本地文件能力 → 全部关闭（安全文档 §2）
+            // 壳只加载网络内容，不需要本地文件能力，全部关闭（安全文档第 2 节）
             allowFileAccess = false
             allowContentAccess = false
             allowFileAccessFromFileURLs = false
@@ -91,7 +93,11 @@ class MainActivity : AppCompatActivity() {
 
             cacheMode = WebSettings.LOAD_DEFAULT
             userAgentString = userAgentString + " " + AppConfig.uaMarker()
-            safeBrowsingEnabled = true // minSdk 26 起可用
+
+            // 注：这里用显式方法名而不是属性语法：
+            // WebSettings 对 safe browsing 只提供了 setter，没有 getter，
+            // 没有 getter 就无法用 Kotlin 的属性语法（会直接编译失败）。
+            setSafeBrowsingEnabled(true)
         }
 
         CookieManager.getInstance().apply {
@@ -125,15 +131,15 @@ class MainActivity : AppCompatActivity() {
             log = { message -> if (BuildConfig.DEBUG) Log.d(TAG, message) },
         )
 
-        // TODO(区块 2)：改为 DownloadManager + 会话 Cookie + 通知栏进度。
-        // 目前仅提示：下载在 WebView 里默认不生效，不要让它"静默没反应"。
+        // TODO（区块 2）：改为 DownloadManager 加会话 Cookie 与通知栏进度。
+        // 目前仅提示：WebView 里的下载默认不生效，不能让它静默无反应。
         webView.setDownloadListener { url, _, _, _, _ ->
             Log.i(TAG, "下载请求（区块 2 实现）：host=" + hostOf(url))
             toast(R.string.toast_download_todo)
         }
     }
 
-    /** 返回键：先关错误面板 → 再网页后退 → 最后才退出应用。 */
+    /** 返回键：先关错误面板，再网页后退，最后才退出应用。 */
     private fun registerBackCallback() {
         onBackPressedDispatcher.addCallback(
             this,
@@ -226,7 +232,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        webView.onResume() // 恢复 JS 定时器/动画，省电靠 onPause
+        webView.onResume() // 恢复 JS 定时器与动画
     }
 
     override fun onPause() {
@@ -235,10 +241,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        // WebView 不主动销毁会泄漏 Activity
+        // WebView 不主动销毁会泄露 Activity。
+        // ⚠️ 踩坑：API 35 上 setWebViewClient 的参数是 @NonNull，**不能传 null**
+        //（会报 “Null cannot be a value of a non-null type” 而编译失败），
+        // 所以这里放空实现来切断回调，而不是传 null。
         webView.stopLoading()
-        webView.setWebChromeClient(null)
-        webView.setWebViewClient(null)
+        webView.webViewClient = WebViewClient()
+        webView.webChromeClient = WebChromeClient()
         (webView.parent as? android.view.ViewGroup)?.removeView(webView)
         webView.destroy()
         super.onDestroy()

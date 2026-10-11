@@ -1,55 +1,48 @@
-# CI 工作流：为何没在 `.github/workflows/` 里，以及如何启用
+# CI 工作流说明
 
-## 1. 现状（区块 1 结束时）
+**状态：已启用**（首次上线 2026-10-11，文件位置 `.github/workflows/android.yml`）。
 
-工作流内容已写好在 **[`ci/android.yml`](../ci/android.yml)**，但**尚未生效**，因为它不在
-`.github/workflows/` 目录下。
+---
 
-原因：GitHub 的安全限制 —— 通过 API 写入 `.github/workflows/**` 的凭据必须具有 `workflow` 权限。
-当前助手使用的 GitHub token 不具备该权限，API 直接返回：
+## 1. 它做什么
+
+| 事件 | 作业 | 产物 |
+|---|---|---|
+| 任意分支 push / PR / 手动触发 | `debug` | `app-debug-apk`（artifact，保留 14 天） |
+| 推 tag `vX.Y.Z` | `release` | 签名 APK + `.sha256`（artifact 90 天），并自动创建 GitHub Release |
+
+## 2. 首次启用时踩的坑（沿革，留着以后别再踩）
+
+通过 GitHub API 写入 `.github/workflows/**` 的凭据**必须具备 `workflow` 权限**，
+否则返回：
 
 ```
 403 Resource not accessible by personal access token
 ```
 
-（已用 `ci/` 下的文件与 `.github/workflows/probe.yml` 两次验证，均为同一错误，不是文件内容问题。）
+区块 1 的骨架 PR 阶段就撞上了这个错误（已用两个不同路径验证，不是文件内容问题），
+当时把工作流先放在 `ci/android.yml`。用户给 token 加上 `workflow` 权限后，
+已由 PR `chore/01b-enable-ci` 移入正式位置并删除旧副本。
 
-## 2. 启用方式（二选一）
+> 结论：**以后不要往 `ci/` 放工作流副本**，直接写 `.github/workflows/`；
+> 如果又报 403，就是 token 的 `workflow` 权限又没了。
 
-### 方式 A：给 token 加 `workflow` 权限（推荐）
+## 3. 发 Release 的前置条件
 
-1. GitHub → Settings → Developer settings → Personal access tokens → 找到助手使用的那枚 token；
-2. 勾选 **`workflow`** 权限（细粒度 token 则为 `Workflows: Read and write`）；
-3. 告诉一声助手，由它执行“把 `ci/android.yml` 移到 `.github/workflows/android.yml`”这个提交。
+必须先配好 4 个 Secrets（见 [BUILD.md](BUILD.md) §3），否则 `release` 作业会主动失败。
+这是故意的：宁可失败，也不发出一个「装不上的未签名包」。
 
-### 方式 B：手动在网页上创建（不需要改 token）
+| Secret | 内容 |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 clubapp-release.jks` 的输出 |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore 口令 |
+| `ANDROID_KEY_ALIAS` | `clubapp` |
+| `ANDROID_KEY_PASSWORD` | key 口令 |
 
-1. 打开 <https://github.com/nhyzcms/app/new/main>（或 PR 分支）：
-   Add file → **Create new file**；
-2. 文件名填 `.github/workflows/android.yml`；
-3. 把 `ci/android.yml` 的全部内容粘进去 → Commit。
+另外，tag 必须与 `version.properties` 的 `versionName` 一致（工作流会校验并在不一致时报错）。
 
-> 也可以用命令行：
-> ```bash
-> git checkout feat/01-shell-skeleton
-> mkdir -p .github/workflows
-> git mv ci/android.yml .github/workflows/android.yml
-> git commit -m "ci: 启用 Android 构建工作流" && git push
-> ```
+## 4. 其他约定
 
-启用后执行一次 push 就会自动跑，也可以在 Actions 页面点 **Run workflow** 手动触发。
-
-## 3. 启用后会发生什么
-
-| 事件 | 作业 | 产物 |
-|---|---|---|
-| 任意分支 push / PR | `debug` | `app-debug-apk`（artifact，14 天）|
-| 推 tag `vX.Y.Z` | `release` | 签名 APK + `.sha256`，并自动建 GitHub Release |
-
-## 4. 注意
-
-- 发 Release **必须**先配好 4 个 Secrets（见 [BUILD.md](BUILD.md) §3），否则 `release` 作业会主动失败；
-  这是故意的：宁可失败，也不发出一个“装不上的未签名包”。
-- tag 必须与 `version.properties` 的 `versionName` 一致（工作流会校验并在不一致时报错）。
-- 本仓库不提交 `gradle-wrapper.jar`，CI 用 `gradle/actions/setup-gradle` 安装 Gradle 8.13。
-- 第一次跑 CI 前，请先确保 `.github/workflows/android.yml` 已在首个 PR 合并后存在于 `main`。
+- 本仓库**不提交 `gradle-wrapper.jar`**，CI 用 `gradle/actions/setup-gradle` 安装 Gradle 8.13；
+- 同一个 ref 重复推送会取消上一次未跑完的任务（`concurrency`），节约额度；
+- 如果构建失败，先看 “构建 debug APK” 这一步的报错；常见原因见 [BUILD.md](BUILD.md) §7。

@@ -38,11 +38,11 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
 │   ├── SECURITY.md                 ← 威胁模型与已实施的安全控制
 │   ├── ROADMAP.md                  ← 任务分块（本项目的推进方式）
 │   ├── BUILD.md                    ← 本地与 CI 构建、签名、发版 SOP
-│   ├── CI-WORKFLOW.md              ← CI 工作流为何未就位、如何启用
+│   ├── CI-WORKFLOW.md              ← CI 工作流说明与发版前置条件
 │   ├── APP-MANIFEST.md             ← 远程配置清单（app-manifest.json）契约
 │   ├── FEATURE-MATRIX.md           ← 网站功能 ↔ 壳支持情况 台账
 │   └── chunks/CHUNK-0N-REPORT.md   ← 每一块的开发说明
-├── ci/android.yml                  ← ⚠️ 待激活的 CI 工作流（见 docs/CI-WORKFLOW.md）
+├── .github/workflows/android.yml   ← CI：debug 构建 / tag 自动发 Release
 ├── settings.gradle.kts / build.gradle.kts / gradle.properties / version.properties
 └── app/                            ← Android 模块
     ├── build.gradle.kts
@@ -75,16 +75,16 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 > Gradle 版本）。若要本地用 `./gradlew`，在 Android Studio 里执行一次
 > `gradle wrapper --gradle-version 8.13` 生成即可。详见 [`docs/BUILD.md`](docs/BUILD.md)。
 
-### 4.2 CI
+### 4.2 CI（已启用）
 
 | 触发 | 行为 |
 |---|---|
-| push / PR | `assembleDebug`，失败即红 |
+| 分支 push / PR | `assembleDebug`，失败即红；产物为 artifact `app-debug-apk`（14 天） |
 | 推送 tag `vX.Y.Z` | `assembleRelease`（读取 Secrets 签名）→ 自动创建 GitHub Release 并附 APK + SHA-256 |
 
-> ⚠️ **工作流当前处于待激活状态**（放在 `ci/android.yml`）：GitHub 要求写入
-> `.github/workflows/` 的凭据具备 `workflow` 权限，当前 token 没有。
-> 启用方法（二选一）见 [`docs/CI-WORKFLOW.md`](docs/CI-WORKFLOW.md)。
+> 发 Release 必须先配好 4 个 Secrets，否则 `release` 作业会**主动失败**
+> （宁可失败，也不发出装不上的未签名包）。步骤见 [`docs/BUILD.md`](docs/BUILD.md) §3、
+> 说明见 [`docs/CI-WORKFLOW.md`](docs/CI-WORKFLOW.md)。
 
 ### 4.3 改站点地址
 
@@ -115,7 +115,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 | 区块 | 内容 | 状态 |
 |---|---|---|
-| 1 | 整体骨架：可编译的最小壳 + 文档 + CI | ✅ 已完成（见 [报告](docs/chunks/CHUNK-01-REPORT.md)） |
+| 1 | 整体骨架：可编译的最小壳 + 文档 + CI | ✅ 已完成（[报告](docs/chunks/CHUNK-01-REPORT.md)） |
 | 2 | 全部功能能力：文件上传/下载、相机、权限、长按保存、分享 | ⏳ 下一块 |
 | 3 | 三级更新机制（manifest + APK 自升级） | ⏳ |
 | 4 | 原生手感：沉浸式、下拉刷新、手势返回、启动页、主题跟随 | ⏳ |
@@ -145,7 +145,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | [SECURITY.md](docs/SECURITY.md) | 威胁模型、安全控制、自查清单 |
 | [ROADMAP.md](docs/ROADMAP.md) | 分块计划与验收标准 |
 | [BUILD.md](docs/BUILD.md) | 构建、签名、版本号规则、发布步骤 |
-| [CI-WORKFLOW.md](docs/CI-WORKFLOW.md) | CI 工作流的启用方式 |
+| [CI-WORKFLOW.md](docs/CI-WORKFLOW.md) | CI 行为与发版前置条件 |
 | [APP-MANIFEST.md](docs/APP-MANIFEST.md) | 远程配置清单字段契约 |
 | [FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md) | 网站功能覆盖台账 |
 
