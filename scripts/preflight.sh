@@ -12,9 +12,12 @@ cd "$(dirname "$0")/.." || exit 1
 fail=0
 err() { echo "[预检][失败] $*"; fail=1; }
 
+# 注：下面每个 python 检查都带 2>&1。python 的 sys.exit("消息") 是写到 stderr 的，
+# 不重定向就会丢掉最关键的“哪一行、什么原因”（区块 2 才发现，之前只有空消息）。
+
 # ── 1. XML：必须能解析，且注释里不能出现连续两个短横线 （AAPT 会直接中断构建）──
 while IFS= read -r f; do
-  out=$(python3 - "$f" <<'PY'
+  out=$(python3 - "$f" 2>&1 <<'PY'
 import sys, xml.dom.minidom
 p = sys.argv[1]
 raw = open(p, encoding="utf-8").read()
@@ -38,7 +41,7 @@ done < <(find app/src/main -name '*.xml' | sort)
 #   区块 2 踩过：KDoc 里写了 MIME 通配示例 → CI 报 “Unclosed comment” +
 #   MainActivity 里 shouldOfferCapture “Unresolved reference”，排查很久。
 while IFS= read -r f; do
-  out=$(python3 - "$f" <<'PY'
+  out=$(python3 - "$f" 2>&1 <<'PY'
 import sys
 p = sys.argv[1]
 raw = open(p, encoding="utf-8").read()
