@@ -108,9 +108,14 @@ tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }.co
 }
 
 dependencies {
-    // 刻意只保留 4 个依赖：体积与供应链风险最小化（ADR-A05）
+    // 刻意只保留 4 个运行期依赖：体积与供应链风险最小化（ADR-A05）
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.webkit:webkit:1.12.1")   // 后续 JS 桥接（WebMessageListener）用
+
+    // 仅测试类路径（不进 APK）：区块 2 起的纯逻辑单测（UploadLimit / DownloadPolicy / LongPressPolicy /
+    // PermissionsPolicy / NavPolicy）。理由：本仓库没有本地 Android 构建环境，CI 是唯一能验证的地方，
+    // 纯函数不该只靠人眼审查（见 docs/chunks/CHUNK-02-REPORT.md §2.7）。
+    testImplementation("junit:junit:4.13.2")
 }
