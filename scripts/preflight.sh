@@ -34,6 +34,51 @@ PY
 ) || err "$f：$out"
 done < <(find app/src/main -name '*.xml' | sort)
 
+# ── 1b. Kotlin 块注释：里面不能出现「斜杠 + 星号」（Kotlin 块注释会嵌套，会把整个文件吞掉）──
+#   区块 2 踩过：KDoc 里写了 MIME 通配示例 → CI 报 “Unclosed comment” +
+#   MainActivity 里 shouldOfferCapture “Unresolved reference”，排查很久。
+while IFS= read -r f; do
+  out=$(python3 - "$f" <<'PY'
+import sys
+p = sys.argv[1]
+raw = open(p, encoding="utf-8").read()
+OP = "/" + "*"
+CL = "*" + "/"
+i, n = 0, len(raw)
+while i < n:
+    c = raw[i]
+    nxt = raw[i + 1] if i + 1 < n else ""
+    if c == "/" and nxt == "/":              # 行注释：跳到行尾（行注释不会嵌套，安全）
+        k = raw.find("\n", i)
+        i = n if k == -1 else k + 1
+    elif c == "/" and nxt == "*":            # 块注释
+        j = raw.find(CL, i + 2)
+        if j == -1:
+            sys.exit("块注释未闭合（可能是嵌套的斜杠加星号，或漏了结束符）")
+        if OP in raw[i + 2:j]:
+            line = raw[:i].count("\n") + 1
+            sys.exit("第 %d 行起的块注释里出现了斜杠加星号：Kotlin 块注释会嵌套，会把文件剩余部分全吞掉" % line)
+        i = j + 2
+    elif c == '"':                            # 字符串字面量（含三引号）整体跳过，里面的符号不算
+        if raw[i:i + 3] == '"""':
+            k = raw.find('"""', i + 3)
+            i = n if k == -1 else k + 3
+        else:
+            i += 1
+            while i < n and raw[i] != '"':
+                i += 2 if raw[i] == "\\" else 1
+            i += 1
+    elif c == "'":                            # 字符字面量
+        i += 1
+        while i < n and raw[i] != "'":
+            i += 2 if raw[i] == "\\" else 1
+        i += 1
+    else:
+        i += 1
+PY
+) || err "$f：$out"
+done < <(find app/src/main/java app/src/test/java -name '*.kt' 2>/dev/null | sort)
+
 # ── 2. Kotlin 里引用的 R.xxx 必须在资源里真实存在 ──
 python3 - <<'PY' || fail=1
 import os, re, sys
@@ -104,9 +149,7 @@ PY
 #
 # 【重要】代码模式只在“非注释行”里搜。
 #   我们习惯在注释里写“这里绝不能调 handler.proceed()”这类警示语，
-#   直接全文 grep 会让自己的警示注释触发规则
-#   （区块 1 把报错原文抄进注释踩过一次；区块 2 加 .proceed() 规则时又踩了一次，
-#    因此固化成 code_grep 这个助手，以后新增规则一律用它）。
+#   直接全文 grep 会让自己的警示注释触发规则（区块 1、区块 2 各踩过一次）。
 code_grep() {
   local pattern="$1"
   local path="${2:-app/src/main/java}"
