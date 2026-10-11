@@ -46,7 +46,10 @@ App 界面本身就是远程页面（`https://8.153.145.175/`）。网站一发�
 - **固定地址**：`https://8.153.145.175/app-update/manifest.json`（nginx 静态文件，不经 Django，不占 gunicorn）
 - **拉取时机**：① 冷启动后 3 秒（不阻塞首屏）；② 应用回到前台且距上次拉取 > 30 分钟；③ 用户手动点"检查更新"。
 - **失败处理**：静默忽略（用上次缓存或默认值），**绝不能因为配置拉不到导致 App 不可用**。
-- **字段契约**：[APP-MANIFEST.md](APP-MANIFEST.md)
+- **壳侧实现（区块 3 已落地）**：`shell/update/ManifestFetcher`（no-cache + 主机白名单 + 256 KB 上限）→
+  `UpdateManifestCodec`（字段级容错）→ `UpdatePolicy`（安全判定）→ `UpdateStore`
+  （把 `startRoute`/`flags` **落盘、下次冷启动生效**，避免首屏等网络）。
+  手动入口在原生错误面板的「检查更新」按钮上（正常使用靠自动检查，不打扰用户）。
 - 可实现的典型动作：
   - `startRoute`：改起始页（如从 `/#/m` 改到 `/#/app`）—— 不升级也能上线新首页；
   - `flags.live2d=false`：紧急关掉吃带宽的 Live2D；
@@ -76,6 +79,18 @@ App 界面本身就是远程页面（`https://8.153.145.175/`）。网站一发�
 1. **Android 不允许降级安装**（新版 versionCode 一旦装过，就装不回旧的）。
    → 所以"回滚"不是发回旧代码，而是**发一个 versionCode 更高的修复版**。
 2. **签名必须永久一致**。keystore 丢了，用户就必须卸载重装（会丢本地 Cookie，需重新登录）。
+
+### 壳侧实现（区块 3 已落地）
+
+| 环节 | 实现 | 关键取舍 |
+|---|---|---|
+| 落盘位置 | `cacheDir/update/latest.apk.part` → 校验后改名 `latest.apk` | 不用公共「下载」目录：更新包是一次性产物，也不该要存储权限；系统清缓存最多是重下 |
+| 断点续传 | HTTP `Range: bytes=N-`；服务端返回 200（不支持 Range）则从头写 | `.part` 长度 + 上次记录的 sha256 都对得上才续传，否则删掉重下 |
+| 摘要 | 下载线程**边下边算** SHA-256（不额外读一遍文件） | 校验不过 → 立刻删包，绝不交给安装器 |
+| 体积 | 声明值与实际长度比对；≥ 64 KB 且 ≤ 200 MB | 防"清单被投毒指向一个小文件/超大文件" |
+| 签名 | `ApkSignatures` 取本机证书与待装包证书，`SignatureCheck` 比对 | **取不到签名 = 拒绝安装**（宁可重试，不放过来源不明的包） |
+| 安装 | `FileProvider` 单文件 URI + `FLAG_GRANT_READ_URI_PERMISSION` + 系统安装器 | Android 8+ 需用户先允许"安装未知应用"，壳只引导不绕过 |
+| 下载源 | 清单 `apk.url` 优先，其后 `updateSources`；逐个尝试，全部过主机白名单 | 自托管优先，GitHub Release 作备用 |
 
 ### 应用内更新的安装体验取舍
 
@@ -118,8 +133,12 @@ Android 没有"静默自升级"（除非系统应用/设备管理员）。用户
 - [ ] 更新 `docs/chunks/CHUNK-0N-REPORT.md`（本版改了什么、哪些需要新的权限）；
 - [ ] PR 合并到 `main`；
 - [ ] 打 tag `vX.Y.Z` → CI 产出签名 APK + sha256；
-- [ ] 将 APK 同步到自托管目录（或只更新 manifest 里的 `apk.url`）；
-- [ ] 更新 `manifest.json`：`latestVersionCode` / `apk.url` / `apk.sha256` / `apk.size` / `notes`；
+- [ ] 用 `scripts/publish-apk.sh` 把包与清单一起更新到 `/opt/club/app-update/`
+      （它负责计算 sha256、复制为 `latest.apk`、改写 `manifest.json` 的 `latest` 字段）：
+      ```bash
+      bash scripts/publish-apk.sh --apk /tmp/app-release.apk \
+        --version-code 2 --version-name 0.2.0 --notes "本版更新说明"
+      ```
 - [ ] 用旧版 App 实测升级路径（安装后能覆盖、登录态保留）。
 
 ### 6.4 紧急处置
