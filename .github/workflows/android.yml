@@ -1,0 +1,202 @@
+name: Android
+
+# 触发策略：
+#   * 任意分支 push / PR → 先静态预检，再建 debug APK
+#   * 推 tag vX.Y.Z      → 建签名 release APK 并自动创建 GitHub Release
+#   * 手动 workflow_dispatch 便于重跑
+#
+# 【为何失败时要贴日志到 PR 评论】
+#   Actions 的原始日志需要仓库管理员权限才能通过 API 读取，
+#   而 Step Summary / annotations 都不提供完整报错。
+#   所以失败时用 scripts/ci-extract-errors.sh 抽取关键报错并自动贴成本 PR 评论。
+#
+# 【为何要先跑 scripts/preflight.sh】
+#   本项目没有本地 Android 构建环境，若靠“跑一遍 CI 才知道错在哪”，
+#   一次小错误就要白白消耗一个完整的构建周期（~2 分钟）。
+#   预检只需要 python3，5 秒内就能抦下 XML 语法/注释、资源引用、已知陷阱。
+#
+# 【已踩过的坑（首次真实编译共失败 6 次，均已修复）】
+#   1) android-actions/setup-android@v3 直接失败——已弃用，改自写脚本；
+#   2) gradle :app:versionInfo 任务不存在（versionInfo 注册在根项目）——已改为纯 shell 打印；
+#   3) runner 默认 ubuntu-latest 将于 2026-10-19 迁到 Ubuntu 26——已固定 ubuntu-24.04；
+#   4) sdkmanager --licenses 在 runner 上会失败——改为直接写 licenses 文件；
+#   5) XML 注释里出现连续两个短横线会让 AAPT 直接中断（已踩两次）；
+#   6) setWebViewClient(null) 编译不过（API 35 参数是 @NonNull）；
+#   7) WebSettings 的 safe browsing 只有 setter 没有 getter，不能用属性语法。
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write       # 创建 Release
+  pull-requests: write  # 失败时把日志贴成 PR 评论
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 本仓库不提交 gradle-wrapper.jar，由 CI 安装指定版本的 Gradle
+  GRADLE_VERSION: "8.13"
+
+jobs:
+  debug:
+    name: Debug APK
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 静态预检（XML / 资源引用 / 已知陷阱）
+        run: bash scripts/preflight.sh
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 准备 Android SDK
+        run: bash scripts/ci-prepare-android-sdk.sh
+
+      - name: 安装 Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: 打印环境与版本信息
+        run: |
+          echo "分支：$GITHUB_REF_NAME  SHA：$GITHUB_SHA"
+          echo "--- version.properties ---"
+          cat version.properties
+
+      - name: 构建 debug APK
+        run: |
+          set +e
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo "::error::构建失败，关键报错已贴到 PR 评论"
+            exit "$code"
+          fi
+          ls -lh app/build/outputs/apk/debug/
+
+      - name: 失败时贴出关键报错（PR 评论）
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo '### ❌ Debug 作业失败'
+            echo "commit: \`${GITHUB_SHA:0:8}\`"
+            echo ''
+            echo '```text'
+            bash scripts/ci-extract-errors.sh build.log
+            echo '```'
+          } > ci-comment.md
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gh pr comment "${{ github.event.pull_request.number }}" --body-file ci-comment.md
+          else
+            echo '（非 PR 触发，仅输出到控制台）'
+            cat ci-comment.md
+          fi
+
+      - name: 上传产物
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+  release:
+    name: Release APK
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 静态预检（XML / 资源引用 / 已知陷阱）
+        run: bash scripts/preflight.sh
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 准备 Android SDK
+        run: bash scripts/ci-prepare-android-sdk.sh
+
+      - name: 安装 Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      # —— 版本号：tag 覆盖 versionName，versionCode 仍以 version.properties 为准 ——
+      - name: 校验 tag 与 version.properties 一致
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          file=$(grep -E '^versionName=' version.properties | cut -d= -f2 | tr -d ' \r')
+          echo "tag=$tag  version.properties:versionName=$file"
+          if [ "$tag" != "$file" ]; then
+            echo "::error::tag v$tag 与 version.properties 的 versionName=$file 不一致；请先 bump 版本号再打 tag"
+            exit 1
+          fi
+          echo "VERSION_NAME=$tag" >> "$GITHUB_ENV"
+
+      # —— 签名：缺少 Secrets 就拒绝发布（绝不发出装不上的包）——
+      - name: 准备签名 keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::缺少 ANDROID_KEYSTORE_BASE64 等 Secrets，拒绝发布未签名包（见 docs/BUILD.md §3）"
+            exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: 构建 release APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set +e
+          gradle :app:assembleRelease --stacktrace 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo "::error::Release 构建失败，关键报错如下"
+            bash scripts/ci-extract-errors.sh build.log
+            exit "$code"
+          fi
+
+      - name: 重命名并生成 SHA-256
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk out/app-release.apk
+          cd out
+          sha256sum app-release.apk | tee app-release.apk.sha256
+          ls -lh
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: out/*
+          retention-days: 90
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/app-release.apk
+            out/app-release.apk.sha256
+          generate_release_notes: true
+          draft: false
