@@ -5,8 +5,9 @@
       TODO（区块 4）：正式发版前从网站 frontend/src/styles/cobalt.css 的品牌令牌取值对齐，
       同时用它重画图标与启动页，让 App 与网页视觉一致。
 
-      ⚠️ 踩坑记录：XML 注释里禁止出现连续两个短横线，所以不能直接把 CSS 变量名写进注释
-      （AAPT 会报 “The string "--" is not permitted within comments” 并中断构建）。
+      ⚠️ 踩坑记录：XML 注释里不能出现两个连续的短横线（英文减号），
+      也不要把包含这种字符的报错原文照抄进注释里（已因此栽过两次），
+      否则 AAPT 会以 not permitted within comments 为理由中断整个构建。
     -->
     <color name="brand">#1E63E9</color>
 

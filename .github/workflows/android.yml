@@ -8,14 +8,15 @@ name: Android
 # 【为何失败时要贴日志到 PR 评论】
 #   Actions 的原始日志需要仓库管理员权限才能通过 API 读取，
 #   而 Step Summary / annotations 都不提供完整报错。
-#   所以构建失败时自动把日志尾部贴成本 PR 的评论：
+#   所以失败时用 scripts/ci-extract-errors.sh 抽取关键报错并自动贴成本 PR 评论：
 #   维护者与助手都能直接看到真实报错，不用上去点网页。
 #
 # 【已踩过的坑（别再踩）】
 #   1) android-actions/setup-android@v3 直接失败——已弃用，改为自写脚本；
 #   2) gradle :app:versionInfo 任务不存在（versionInfo 注册在根项目）——已改为纯 shell 打印；
 #   3) runner 默认 ubuntu-latest 将于 2026-10-19 迁到 Ubuntu 26——已固定 ubuntu-24.04；
-#   4) sdkmanager --licenses 在 runner 上会失败——改为直接写 licenses 文件。
+#   4) sdkmanager --licenses 在 runner 上会失败——改为直接写 licenses 文件；
+#   5) XML 注释里出现连续两个短横线会让 AAPT 直接中断——见 res/values/colors.xml 里的注记。
 on:
   push:
     branches: ["**"]
@@ -70,22 +71,22 @@ jobs:
           gradle :app:assembleDebug --stacktrace 2>&1 | tee build.log
           code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
-            echo "::error::构建失败，日志尾部已贴到 PR 评论"
+            echo "::error::构建失败，关键报错已贴到 PR 评论"
             exit "$code"
           fi
           ls -lh app/build/outputs/apk/debug/
 
-      - name: 失败时贴出日志尾部（PR）
+      - name: 失败时贴出关键报错（PR 评论）
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           {
-            echo '### ❌ Debug 构建失败：日志尾部（自动生成）'
+            echo '### ❌ Debug 构建失败'
             echo "commit: \`${GITHUB_SHA:0:8}\`"
             echo ''
             echo '```text'
-            tail -n 120 build.log 2>/dev/null || echo '(未能读到 build.log)'
+            bash scripts/ci-extract-errors.sh build.log
             echo '```'
           } > ci-comment.md
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -159,8 +160,8 @@ jobs:
           gradle :app:assembleRelease --stacktrace 2>&1 | tee build.log
           code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
-            echo "::error::Release 构建失败，日志尾部如下"
-            tail -n 120 build.log
+            echo "::error::Release 构建失败，关键报错如下"
+            bash scripts/ci-extract-errors.sh build.log
             exit "$code"
           fi
 
