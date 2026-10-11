@@ -241,6 +241,15 @@ if [ -d app/src/main/java/com/nhyzcms/clubapp/shell/update ]; then
   fi
 fi
 
+# 3.6 禁止用 raw string 承载「以引号开头/结尾」的 JSON 文本
+#   区块 3 踩过：MiniJsonTest 里用 raw string 写了一段以引号开头、以引号结尾的 JSON，
+#   正确写法是首尾各四个引号（四个连续引号组成一个内容引号 + 一个结束符）；
+#   少写一个结尾引号 → JSON 字符串未闭合 → 解析返回 null → 断言在下一行失败，
+#   报错只说 AssertionError，根因极难定位。改成用普通字符串拼 JSON 就没有这种歧义。
+if [ -n "$(code_grep '""""' app/src/main/java; code_grep '""""' app/src/test/java)" ]; then
+  err "源码里出现了连续四个引号（raw string 内容以引号开头/结尾）：改用普通字符串拼 JSON，避免首尾引号配对写错"
+fi
+
 # 3.4 密钥 / 本地配置不得入库
 for f in $(find . -name '*.jks' -o -name '*.keystore' -o -name 'local.properties' | grep -v '^\./\.git/'); do
   err "仓库里出现了密钥/本地配置类文件：$f"
