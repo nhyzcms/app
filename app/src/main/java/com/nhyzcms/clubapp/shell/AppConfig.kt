@@ -24,6 +24,15 @@ object AppConfig {
     val START_URL: String = SITE_ORIGIN + START_PATH
 
     /**
+     * FileProvider authority 的**唯一真源**（拍照临时文件与分享图片都用它）。
+     *
+     * 必须与 AndroidManifest 里 provider 的 android:authorities="${applicationId}.fileprovider" 一致；
+     * 用 BuildConfig.APPLICATION_ID 而不是写死包名：debug 变体带 .debug 后缀，
+     * 写死包名会让 debug 包的拍照/分享在运行时炸掉。
+     */
+    val FILE_PROVIDER_AUTHORITY: String = BuildConfig.APPLICATION_ID + ".fileprovider"
+
+    /**
      * UA 标记：网站靠它识别"来自 App"并得知壳版本（契约见 ARCHITECTURE §5.1）。
      * 格式固定为 `NhyzClubApp/<versionName> (Android; <versionCode>)`，不要在中间插空格。
      */
