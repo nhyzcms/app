@@ -23,8 +23,21 @@ class MiniJsonTest {
 
     @Test
     fun parsesEscapesAndUnicodeEscapes() {
-        val value = MiniJson.parse(""""line\n\"q\"\u0041\u4e2d""")
-        assertEquals("line\n\"q\"A中", value)
+        // JSON 文本用普通字符串拼出，不用 raw string：
+        // 区块 3 踩过坑 —— raw string 的内容既要保留 JSON 的首尾引号时，
+        // 首尾各需要四个连续引号（多出的那个属于内容）；少写一个结尾引号就会
+        // 让 JSON 字符串未闭合，表现为解析返回 null、断言在下一行失败，很难定位。
+        //
+        // 这里被测的转义全部属于 **JSON 层**：`\n` `\"` `\uXXXX`
+        val json = "{\"s\":\"a\\nb\\\"c\\u0041\\u4e2d\"}"
+        val root = MiniJson.parse(json) as? Map<*, *> ?: error("应能解析：$json")
+        val text = root["s"] as? String ?: error("s 应是字符串")
+        // 断言码点：万一失败，JUnit 会直接打印两个列表，一眼看出差在哪
+        assertEquals(
+            "JSON 转义解析不符",
+            listOf(0x61, 0x0A, 0x62, 0x22, 0x63, 0x41, 0x4E2D),
+            text.map { it.code },
+        )
     }
 
     @Test
