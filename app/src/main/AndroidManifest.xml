@@ -49,7 +49,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.ClubApp"
+        android:theme="@style/Theme_ClubApp"
         android:usesCleartextTraffic="false">
 
         <!--
@@ -57,13 +57,16 @@
           launchMode=singleTask：深链复用同一个实例，不会堆出多个 WebView。
           theme：区块 4 的启动页主题（windowBackground = 纯色 + 社徽），
                  MainActivity.onCreate 第一件事就 setTheme(R.style.Theme_ClubApp) 切回常规主题。
+                 主题名用下划线而非点号的原因见 values/themes.xml 的说明。
+          enableOnBackInvokedCallback：区块 4 开启 Android 13+ 的预测式返回，
+                 具体行为由 MainActivity 的 OnBackPressedCallback 决定（双击才退出）。
         -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode|density|fontScale"
             android:exported="true"
             android:launchMode="singleTask"
-            android:theme="@style/Theme.ClubApp.Splash"
+            android:theme="@style/Theme_ClubApp_Splash"
             android:windowSoftInputMode="adjustResize">
 
             <intent-filter>
