@@ -6,9 +6,9 @@
 
       ⚠️ 同名 style 是**整体替换**，不是逐项合并：这里必须把 windowBackground
       等基础项重新列一遍（只写新增的三项会让 windowBackground 从启动页配置里消失）。
-      这里把 windowBackground 改成纯色，避免「系统图标 + layer-list 图标」在同一屏里叠两次。
+      命名用下划线而非点号的原因见 values/themes.xml 的说明。
     -->
-    <style name="Theme.ClubApp.Splash" parent="Theme.ClubApp.Base">
+    <style name="Theme_ClubApp_Splash" parent="Theme_ClubApp_Base">
         <item name="android:windowBackground">@color/window_background</item>
         <item name="android:windowSplashScreenBackground">@color/window_background</item>
         <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>

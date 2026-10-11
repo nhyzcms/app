@@ -8,8 +8,13 @@
 
       深浅色的差异全部通过资源引用表达（@color/window_background、@bool/light_system_bar_icons），
       因此**不需要** values-night 里再写一份 style（同名 style 是整体替换，很容易漏 item）。
+
+      命名为什么用下划线而不是惯例的点号（Theme.ClubApp.Splash）：
+      scripts/preflight.sh 会把 Kotlin 里的 R.style.X 与资源名逐字比对，而点号在 R 类里
+      会被换成下划线（Theme.ClubApp → R.style.Theme_ClubApp），含点号的资源名会被误判成
+      「资源不存在」。层级关系本来就由 parent 表达，用下划线名可以两头都对得上。
     -->
-    <style name="Theme.ClubApp.Base" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <style name="Theme_ClubApp_Base" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/window_background</item>
         <item name="android:statusBarColor">@color/window_background</item>
         <item name="android:navigationBarColor">@color/window_background</item>
@@ -23,12 +28,12 @@
       系统会一直显示到第一帧内容画好 —— 零代码、零白屏闪烁。
       API 31+ 由系统 SplashScreen 接管，见 values-v31/themes.xml。
     -->
-    <style name="Theme.ClubApp.Splash" parent="Theme.ClubApp.Base">
+    <style name="Theme_ClubApp_Splash" parent="Theme_ClubApp_Base">
         <item name="android:windowBackground">@drawable/splash_background</item>
     </style>
 
     <!-- 应用真正使用的主题：启动页之后由 MainActivity.onCreate 里 setTheme 切过来。 -->
-    <style name="Theme.ClubApp" parent="Theme.ClubApp.Splash">
+    <style name="Theme_ClubApp" parent="Theme_ClubApp_Splash">
         <item name="android:windowBackground">@color/window_background</item>
     </style>
 </resources>
