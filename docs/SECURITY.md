@@ -46,6 +46,7 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 | `ACCESS_NETWORK_STATE` | 网络可用性判断/错误提示 | — |
 | `CAMERA` | 拍照上传 | 仅在“将要提供拍照入口”时申请；拒了退化为只能选文件 |
 | `WRITE_EXTERNAL_STORAGE` | Android 8/9 把下载写进公共「下载」目录 | **`maxSdkVersion=28`**，且仅在下载时申请；拒了退 App 目录 |
+| `REQUEST_INSTALL_PACKAGES` | 安装自己下载的更新包（区块 3） | 不静默安装：仍需用户在系统里允许「安装未知应用」；包必须通过 sha256 + 签名校验（见 §5） |
 
 > **为什么不做证书固定（Certificate Pinning）**：
 > 站点证书是 ZeroSSL DV，SAN 就是 IP `8.153.145.175`，**90 天必须换一次**。
@@ -69,6 +70,9 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 **为什么不把外部网页放进 WebView**：一旦在同一个 WebView 里加载第三方内容，
 第三方页面就可能利用 WebView 自身漏洞、也可能诱导用户输入密码（钓鱼页面无法与地址栏区分）。
 交给系统浏览器，地址栏会把真相告诉用户。
+
+> 注（区块 3）：清单开关 `externalLinkInBrowser=false` 可让外链改在壳内打开，
+> 但上述明文拦截与未知 scheme 拦截不受该开关影响（`NavPolicy` 在开关之前就已裁决）。
 
 ---
 
@@ -105,7 +109,7 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 | Cookie 属性 | 需网站确认 `SESSION_COOKIE_SECURE/HTTPONLY/SAMESITE` | 建议 `Secure=True, HttpOnly=True, SameSite=Lax` |
 | CSP | 无 | 可评估（注意不要打断 Marzipano/live2d） |
 | `X-Frame-Options` | `SAMEORIGIN` | 保持 |
-| `app-update/` 目录 | 待建（区块 3） | 只读、无目录列表、无执行权限、只放 JSON 与 APK |
+| `app-update/` 目录 | 已备好片段与脚本（区块 3，**待部署**） | 只读、无目录列表、无执行权限、只放 JSON 与 APK |
 | nginx `server_tokens` | `off` | 保持 |
 
 ---
