@@ -44,7 +44,10 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
 │   └── chunks/CHUNK-0N-REPORT.md   ← 每一块的开发说明
 ├── .github/workflows/android.yml   ← CI：预检 + 单测 + debug 构建 / tag 自动发 Release
 ├── settings.gradle.kts / build.gradle.kts / gradle.properties / version.properties
-├── scripts/                        ← preflight.sh（静态预检）、CI 辅助脚本
+├── scripts/                        ← preflight.sh（静态预检）、CI 辅助脚本、
+│                                     nginx-app-update.conf（/app-update/ 片段）、
+│                                     publish-apk.sh（把 APK 发到自托管目录并更新清单）
+├── deploy/app-update/              ← 要拷到服务器 /opt/club/app-update/ 的清单模板与部署说明
 └── app/                            ← Android 模块
     ├── build.gradle.kts
     ├── proguard-rules.pro
@@ -66,7 +69,19 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
     │   │       ├── DownloadStarter.kt       交给系统 DownloadManager（带会话 Cookie）
     │   │       ├── LongPressPolicy.kt       长按命中判定（图片 / 链接）
     │   │       ├── MediaSharePolicy.kt      分享图片的前置判定（纯函数）
-    │   │       └── MediaSharer.kt           分享图片文件本体（缓存 → FileProvider → ACTION_SEND）
+    │   │       ├── MediaSharer.kt           分享图片文件本体（缓存 → FileProvider → ACTION_SEND）
+    │   │       └── update/                  区块 3：三级更新（L0 热 / L1 清单 / L2 自升级）
+    │   │           ├── MiniJson.kt              零依赖 JSON 解析（可单测）
+    │   │           ├── UpdateManifest.kt        清单数据模型 + 解析（字段级容错）
+    │   │           ├── UpdatePolicy.kt          安全判定与版本决策（纯函数，更新流程的安全边界）
+    │   │           ├── UpdateStore.kt           清单缓存 / 开关 / 续传元数据（SharedPreferences）
+    │   │           ├── ManifestFetcher.kt       拉清单（no-cache、主机白名单、体积上限）
+    │   │           ├── ApkDownloader.kt         下更新包（Range 续传 + 边下边算 sha256）
+    │   │           ├── ApkDigest.kt             SHA-256 计算与比对（纯函数）
+    │   │           ├── ApkSignatures.kt         取本机 / APK 文件的签名证书
+    │   │           ├── SignatureCheck.kt        签名一致性判定（纯函数）
+    │   │           ├── UpdateInstaller.kt       FileProvider + 系统安装器（含“未知来源”引导）
+    │   │           └── UpdateController.kt      串联检查 → 提示 → 下载 → 校验 → 安装
     │   └── res/                         字符串、主题（跟随系统深色）、网络安全配置、
     │                                    FileProvider 路径、纯矢量图标、主界面布局
     └── src/test/java/…                  纯逻辑单测（不需要设备；`gradle :app:testDebugUnitTest`）
@@ -106,6 +121,10 @@ gradle :app:testDebugUnitTest
 只改一处：`app/src/main/java/com/nhyzcms/clubapp/shell/AppConfig.kt` 的 `SITE_ORIGIN`
 与 `ALLOWED_HOSTS`。**换域名时务必同步白名单**，否则站内跳转会被判为外链。
 
+同一文件还有更新相关的两处（区块 3）：`UPDATE_MANIFEST_URL`（清单地址）与 `UPDATE_ALLOWED_HOSTS`
+（允许的清单/APK 主机）。**换域名时它们必须一起改**，否则壳会把新地址判为非法并忽略（这是有意的：
+更新流程会下载并安装，地址白名单是它的安全边界）。
+
 ## 5. 三级更新模型（TL;DR）
 
 | 级别 | 场景 | 用户动作 | 归属 |
@@ -122,11 +141,13 @@ gradle :app:testDebugUnitTest
 - **不做证书固定**：站点证书是 90 天 ZeroSSL DV，固定必然在换证日砖掉；改为「HTTPS 强制 + 系统信任链 + TLS 失败明确报错」；
 - 不信任用户安装的 CA（关闭 user trust anchors），防中间人；
 - 站内导航白名单 = 本站 host；其它域名一律交给系统浏览器，未知 scheme 一律拦截；
-- **权限只有 4 个**（完整清单见 SECURITY.md §2.1）：
+- **权限只有 5 个**（完整清单见 SECURITY.md §2.1）：
   - 文件选择走系统 SAF、分享图片走 App 缓存，都不需要读取类权限；
   - `WRITE_EXTERNAL_STORAGE` **只在 Android 8/9 上**用来把下载写进公共「下载」目录
     （`maxSdkVersion="28"`，且仅在下载时申请；拒了退 App 目录），preflight 会强制校验这个限定；
   - `CAMERA` 只在“将要提供拍照入口”时申请；
+  - `REQUEST_INSTALL_PACKAGES` 只用于安装自己下载的更新包（系统仍会要求用户逐个允许“安装未知应用”，
+    壳不绕过也不静默安装）；
 - 所有带会话的请求（`DownloadManager`、分享图片）**必须手动带 Cookie**；
 - 更新包必须**校验 sha256 + 签名一致**才允许安装；安装来源链接只允许本站 / GitHub Releases；
 - 密钥永不入库：keystore 只存在于 GitHub Secrets（base64）；
@@ -138,7 +159,7 @@ gradle :app:testDebugUnitTest
 |---|---|---|
 | 1 | 整体骨架：可编译的最小壳 + 文档 + CI | ✅ 已完成（[报告](docs/chunks/CHUNK-01-REPORT.md)） |
 | 2 | 全部功能能力：文件上传/下载、相机、权限、长按保存、分享 | ✅ 代码完成（[报告](docs/chunks/CHUNK-02-REPORT.md)）；🟡 待真机验收 |
-| 3 | 三级更新机制（manifest + APK 自升级） | ⏳ 下一块 |
+| 3 | 三级更新机制（manifest + APK 自升级） | 🟡 代码完成（[报告](docs/chunks/CHUNK-03-REPORT.md)）；待真机验收 + 服务器加 nginx location |
 | 4 | 原生手感：沉浸式、下拉刷新、手势返回、启动页、主题跟随 | ⏳ |
 | 5 | 站内消息与角标（实时/通知） | ⏳ |
 | 6 | 弱网与性能（3M 带宽适配、缓存、预加载） | ⏳ |
@@ -170,6 +191,8 @@ gradle :app:testDebugUnitTest
 | [APP-MANIFEST.md](docs/APP-MANIFEST.md) | 远程配置清单字段契约 |
 | [FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md) | 网站功能覆盖台账 |
 | [chunks/CHUNK-02-REPORT.md](docs/chunks/CHUNK-02-REPORT.md) | 区块 2（文件/拍照/下载/长按/分享）交付说明 |
+| [chunks/CHUNK-03-REPORT.md](docs/chunks/CHUNK-03-REPORT.md) | 区块 3（三级更新）交付说明与服务器配置步骤 |
+| [deploy/app-update/README.md](deploy/app-update/README.md) | 更新分发目录的部署与发版操作 |
 
 ---
 
