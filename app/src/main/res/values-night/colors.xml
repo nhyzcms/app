@@ -1,7 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 深色（values-night）：窗口与状态栏跟随系统深色 -->
-    <color name="window_background">#101216</color>
+    <!--
+      深色（values-night）：窗口与状态栏跟随系统深色。
+
+      区块 4 起底色对齐**站点深色底** #080f17
+      （网站 frontend/src/theme.ts 的 THEME_COLORS.dark，也是 meta theme-color 的深色值），
+      这样系统深色 + 网页深色时，状态栏与页头之间不会露出一条浅色缝。
+    -->
+    <color name="window_background">#080F17</color>
     <color name="text_primary">#E5E7EB</color>
     <color name="text_secondary">#9CA3AF</color>
+
+    <!-- 骨架块与浮动按钮：深色下改用深灰底 + 亮蓝图标 -->
+    <color name="skeleton">#1B2129</color>
+    <color name="fab_background">#1B2129</color>
+    <color name="fab_icon">#79C2FA</color>
 </resources>

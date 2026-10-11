@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      API 31+ 的系统启动页（SplashScreen API）：
+      系统自己画「背景色 + 图标」，结束后直接进入 Activity，比自绘启动页更跟手。
+
+      ⚠️ 同名 style 是**整体替换**，不是逐项合并：这里必须把 windowBackground
+      等基础项重新列一遍（只写新增的三项会让 windowBackground 从启动页配置里消失）。
+      这里把 windowBackground 改成纯色，避免「系统图标 + layer-list 图标」在同一屏里叠两次。
+    -->
+    <style name="Theme.ClubApp.Splash" parent="Theme.ClubApp.Base">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:windowSplashScreenBackground">@color/window_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/brand</item>
+    </style>
+</resources>

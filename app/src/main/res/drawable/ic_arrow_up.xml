@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 区块 4「返回顶部」按钮的图标（上箭头，与站点图标风格一致）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:tint="@color/fab_icon"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,5.6 L4.2,13.4 L6.1,15.3 L12,9.4 L17.9,15.3 L19.8,13.4 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11,11.6 L11,19 L13,19 L13,11.6 Z" />
+</vector>

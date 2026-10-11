@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  区块 4 启动页背景（API 26 ~ 30 走这条）：
+  纯色底 + 居中的社徽矢量。系统会一直显示 windowBackground，
+  直到第一帧内容画出来为止，因此不需要额外代码、也不会出现白屏闪烁。
+
+  为什么用 layer-list 而不是一张 PNG：仓库里不提交二进制图片
+  （见 docs/SECURITY.md 与 ADR-A04），矢量既可审查又只有不到 1 KB。
+  容器取 180dp：社徽图形在 108dp 画布里只占中间 44%，放大后视觉大小约 80dp。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/window_background" />
+    <item
+        android:width="180dp"
+        android:height="180dp"
+        android:drawable="@drawable/ic_launcher_foreground"
+        android:gravity="center" />
+</layer-list>
