@@ -4,6 +4,7 @@
     webView     — 全屏网页
     progress    — 顶部 3dp 进度条（加载中显示）
     errorPanel  — 原生错误面板（断网 / TLS 失败时覆盖显示，可重试）
+  区块 3 在错误面板里加了「检查更新」（可见的手动入口）。
   区块 4 会在此基础上加 Splash、下拉刷新与沉浸式适配。
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -80,6 +81,14 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="12dp"
                 android:text="@string/action_open_browser" />
+
+            <!-- 区块 3：手动检查更新（正常入口是冷启动自动检查，这里给一个可见的兜底入口） -->
+            <Button
+                android:id="@+id/checkUpdateButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/action_check_update" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>
