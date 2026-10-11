@@ -6,6 +6,9 @@ name: Android
 #   * 手动 workflow_dispatch 便于重跑
 #
 # 首次上线：2026-10-11（区块 1 收尾）
+# 踩坑记录：首次跑挂了，失败步骤是 android-actions/setup-android@v3（8 秒内失败）。
+#           已不再使用该 action——runner 本就预装 Android SDK，改用自写步骤，
+#           少一个第三方依赖 = 少一个故障点。
 # 注意：release 作业依赖 4 个 Secrets，未配置时会主动失败——这是故意的：
 #       宁可失败，也不发出一个装不上的未签名包。见 docs/BUILD.md §3。
 on:
@@ -42,8 +45,8 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: 安装 Android SDK
-        uses: android-actions/setup-android@v3
+      - name: 准备 Android SDK
+        run: bash scripts/ci-prepare-android-sdk.sh
 
       - name: 安装 Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -77,8 +80,8 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: 安装 Android SDK
-        uses: android-actions/setup-android@v3
+      - name: 准备 Android SDK
+        run: bash scripts/ci-prepare-android-sdk.sh
 
       - name: 安装 Gradle
         uses: gradle/actions/setup-gradle@v4
