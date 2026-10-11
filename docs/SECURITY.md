@@ -84,6 +84,19 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 
 > `scripts/preflight.sh` 已加规则：代码里出现 `addJavascriptInterface` 直接挂预检。
 
+### 4.1 壳内执行 JS 的规则（区块 4 起有实际使用）
+
+区块 4 为了跟随网页主题色与滚动位置，壳里会执行两段 **固定常量脚本**
+（`shell/feel/PageStateProbe.PROBE_SCRIPT` 与 `FeelHost.SCROLL_TO_TOP_SCRIPT`）。约束：
+
+- ✅ 只允许执行写在代码里的常量脚本；
+- ❌ 禁止把任何变量拼进 `evaluateJavascript`（拼接 = 开放注入口子，preflight 会拦）；
+- ❌ 禁止 `loadUrl("javascript:...")` 注入；
+- ✅ 读取结果只用于壳自身配色与浮动按钮，**不写回网页**；
+- ❌ 仍然不启用任何桥接：没有 `addJavascriptInterface`，也没有 `WebMessageListener`。
+
+> 两段脚本都不接触 Cookie、不读 localStorage、不发请求，只读 `meta[name=theme-color]` 与 `window.pageYOffset`。
+
 ---
 
 ## 5. 密钥与签名
@@ -121,6 +134,8 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 - [ ] 有没有新增宽存储/通讯录/定位权限？能不用就不用
 - [ ] 若动了下载落盘：`WRITE_EXTERNAL_STORAGE` 是否仍带 `maxSdkVersion="28"`，且仅在下载时申请？（preflight 会拦）
 - [ ] 有没有新增 JS 桥接接口？是否限定 origin + 白名单？
+- [ ] 新增的 `evaluateJavascript` 脚本是不是常量？有没有把变量拼进去？（preflight 会拦）
+- [ ] 脚本的返回值有没有被写回网页？（只用于壳自身界面，不写回）
 - [ ] 日志里有没有打印 URL 参数、Cookie、token、手机号？
 - [ ] 下载/安装路径是否校验了 `https` + `sha256` + 签名？
 - [ ] 上传/分享拿着会话的请求（下载、分享图片）是否都带了会话 Cookie？（不带会拿到 403 或登录页 HTML）
