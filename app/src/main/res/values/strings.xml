@@ -94,6 +94,10 @@
     <string name="notice_title_warn">提醒</string>
     <string name="action_notice_ok">知道了</string>
 
+    <!-- 区块 4：原生手感（启动页 / 下拉刷新 / 返回顶部 / 返回键） -->
+    <string name="cd_back_to_top">返回顶部</string>
+    <string name="toast_press_back_again">再按一次返回键即退出应用</string>
+
     <!-- 无障碍 -->
     <string name="cd_webview">网站内容</string>
     <string name="cd_progress">加载进度</string>
