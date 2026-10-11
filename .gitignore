@@ -1,0 +1,38 @@
+# ── Android / Gradle ──────────────────────────────────────────────────────────
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+build/
+app/build/
+app/release/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+output.json
+
+# ── 签名与密钥（绝对禁止入库）────────────────────────────────────────────────
+*.jks
+*.keystore
+keystore.properties
+release.keystore
+!gradle/wrapper/gradle-wrapper.jar
+
+# ── CI / 本地临时产物 ────────────────────────────────────────────────────────
+/artifacts/
+/out/
+*.log
+.env
+.env.*
+
+# ── 编辑器 ───────────────────────────────────────────────────────────────────
+.vscode/
+*.swp
