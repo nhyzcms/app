@@ -1,7 +1,7 @@
 # 区块 3 交付报告 — 三级更新机制（L0 热 / L1 清单 / L2 自升级）
 
 > 日期：2026-10-11 · 分支：`feat/03-update-mechanism` · 依据：`docs/ROADMAP.md` 区块 3
-> 状态：**代码与单测完成，静态预检通过；服务器配置与真机验收待办**（第 5、6 节是给管理员的）
+> 状态：**代码与单测完成（CI 全绿）、服务器侧已部署；余下真机验收**（第 6 节）
 > 上游文档：[UPDATE-STRATEGY.md](../UPDATE-STRATEGY.md)、[APP-MANIFEST.md](../APP-MANIFEST.md)
 
 ---
@@ -32,15 +32,15 @@
 - `AppConfig.kt`：新增 `UPDATE_ALLOWED_HOSTS`（清单与 APK 主机白名单，唯一真源）；
 - `AndroidManifest.xml`：新增 `REQUEST_INSTALL_PACKAGES`；`file_paths.xml`：新增 `cacheDir/update/`；
 - `res/values/strings.xml`、`res/layout/activity_main.xml`：更新相关文案与按钮；
-- `scripts/preflight.sh`：新增区块 3 的 5 条规则（见第 4 节）；
+- `scripts/preflight.sh`：新增区块 3 的 6 条规则（见第 4 节）；
 - 文档：README / ROADMAP / FEATURE-MATRIX / UPDATE-STRATEGY / APP-MANIFEST / SECURITY 同步。
 
 ### 1.3 新增运维资产
 
-- `scripts/nginx-app-update.conf`：`/app-update/` 的 location 片段（no-cache、只读、正确 MIME）；
+- `scripts/nginx-app-update.conf`：`/app-update/` 的 location 片段（no-cache、只读、正确 MIME、HSTS/Alt-Svc 重复声明）；
 - `scripts/publish-apk.sh`：把 APK 发到自托管目录并改写清单（算 sha256 / 体积 / 更新 `latest`）；
 - `deploy/app-update/manifest.json`：初始清单模板（`latest: null`，即"不推更新"）；
-- `deploy/app-update/README.md`：部署、发版、L1 改配置、常见问题。
+- `deploy/app-update/README.md`：部署、发版、L1 改配置、常见问题（含本机部署记录）。
 
 ---
 
@@ -78,9 +78,9 @@ sha256 只能证明"和清单里写的一致"，而清单本身是服务器上�
 
 ---
 
-## 3. CI 会不会跳过这些逻辑
+## 3. 测试与 CI
 
-不会。新增 5 个测试类、30 个用例，全部是纯 JVM 逻辑（不碰 Android API）：
+新增 5 个测试类、30 个用例，全部是纯 JVM 逻辑（不碰 Android API）：
 
 | 测试类 | 覆盖 |
 |---|---|
@@ -90,8 +90,19 @@ sha256 只能证明"和清单里写的一致"，而清单本身是服务器上�
 | `ApkDigestTest`（6） | `SHA-256("abc")` 标准向量、十六进制补零、文件与字符串一致、缺文件返回 null |
 | `SignatureCheck`（2，含在上一类） | 集合相等（顺序无关）、空集合拒绝 |
 
-> 无法本地编译：本机没有 JDK/Android SDK，编译与单测由 CI 执行（`gradle :app:testDebugUnitTest`）。
 > 提交前在本机跑了 `bash scripts/preflight.sh`（通过）与一个自写的括号/字符串/注释配平检查（36 个 .kt 通过）。
+> CI（预检 + `testDebugUnitTest` + `assembleDebug`）已全绿。
+
+### 3.1 本块唯一一次 CI 失败（值得记录）
+
+`MiniJsonTest.parsesEscapesAndUnicodeEscapes` 报 `AssertionError at MiniJsonTest.kt:27`，只有一行信息。
+
+根因：用 Kotlin raw string 承载「**首尾都带引号**」的 JSON 文本时，正确的写法是
+首尾各四个连续引号（多出来的那个属于内容）；被“修正”为三个引号后，内容末尾少了一个引号 →
+JSON 字符串未闭合 → 解析返回 `null` → 断言在下一行失败。
+
+修法：该用例改用普通字符串拼 JSON，并把期望值换成**码点列表**（失败时 JUnit 会直接打印两个列表）；
+同时把它固化为预检规则 3.6（见下）。
 
 ---
 
@@ -104,47 +115,49 @@ sha256 只能证明"和清单里写的一致"，而清单本身是服务器上�
 | 3 | 更新相关代码必须出现 `FLAG_GRANT_READ_URI_PERMISSION` | 缺了它系统安装器读不到那个 URI（真机才炸） |
 | 4 | 更新相关代码必须出现 `ApkDigest.matches(` | 防止有人"顺手"把未校验的文件交给安装器 |
 | 5 | 更新相关代码不得出现 `DIRECTORY_DOWNLOADS`；`AppConfig` 必须有 `UPDATE_ALLOWED_HOSTS` | 更新包不进公共下载目录；白名单只有一处真源 |
+| 6 | 源码里不得出现连续四个引号（见 §3.1） | 防止再次写出首尾引号配错、导致 JSON 未闭合的 raw string |
 
 ---
 
-## 5. 需要你在服务器上做的事（**等高危操作确认后执行**）
+## 5. 服务器侧部署（✅ 已于 2026-10-11 22:58 执行完成）
 
-> 这四步是区块 3 的"最后一公里"。以下命令我**尚未执行**，请你确认后我再动手（或你自己执行）。
-
-### 5.1 加 nginx location（只读静态目录）
+### 5.1 实际执行的步骤
 
 ```bash
-# ① 备份（记住这个文件名，回滚要用）
-sudo cp -a /etc/nginx/conf.d/club.conf /etc/nginx/conf.d/club.conf.bak.app-update
+# ① 备份（回滚用）
+sudo cp -a /etc/nginx/conf.d/club.conf /etc/nginx/conf.d/club.conf.bak.app-update-20261011-225834
 
-# ② 把 scripts/nginx-app-update.conf 的内容粘贴进 club.conf 的 server { } 块内
-#    片段要点：alias /opt/club/app-update/; autoindex off; Cache-Control "no-cache"; 只允许 GET/HEAD
+# ② 脚本方式：在 HTTPS server { } 块内、location / { 之前插入片段
+#    （片段内容 = scripts/nginx-app-update.conf）
 
-# ③ 语法检查 + 平滑重载
+# ③ 目录与初始清单（最新：root:nginx 0750 / 0640 —— worker 用户是 nginx，不是 www-data）
+sudo install -d -m 0750 -o root -g nginx /opt/club/app-update
+sudo install -m 0640 -o root -g nginx <manifest.json> /opt/club/app-update/manifest.json
+
+# ④ 校验 + 平滑重载
 sudo nginx -t && sudo nginx -s reload
 ```
 
-### 5.2 建目录、放初始清单
+### 5.2 验证结果（实际输出）
 
-```bash
-sudo install -d -m 0750 -o root -g www-data /opt/club/app-update
-sudo install -m 0640 -o root -g www-data \
-     /opt/club/deploy/app-update/manifest.json \
-     /opt/club/app-update/manifest.json
-```
+- `nginx -t`：syntax is ok / test is successful
+- `/app-update/manifest.json` → **HTTP/2 200**，`content-type: application/json`，`cache-control: no-cache`，
+  HSTS 与 `alt-svc` 均存在，正文为正确 JSON（`latest: null`）
+- `/app-update/latest.apk` → **404**（还没发包，符合预期）
+- 首页 `https://8.153.145.175/` → **200**（站点未受影响）
+- 服务：nginx / club / redis / postgresql-17 / club-updater-tunnel 均 active
 
-> `/opt/club/deploy/…` 需要先把本 PR 合并、更新器应用后才能就位；
-> 也可以直接把仓库里的 `deploy/app-update/manifest.json` 内容拷过去。
+### 5.3 两个真机才发现的事实（已回写文档）
 
-### 5.3 验证
+1. **这台机器的 nginx worker 用户是 `nginx`**（无 `www-data`）；目录属主写错会 403；
+2. location 里一旦用了 `add_header`，就不再继承 server 级的 `add_header`，
+   所以 HSTS / **Alt-Svc** 必须在片段里重复声明（已补上）。
 
-```bash
-curl -sSI https://8.153.145.175/app-update/manifest.json   # 期望 200 + application/json
-curl -sS  https://8.153.145.175/app-update/manifest.json   # 期望 JSON 内容（latest: null）
-curl -sSI https://8.153.145.175/app-update/latest.apk      # 还没发包时期望 404
-```
+### 5.4 尚需留意
 
-### 5.4 可选：网站侧的一处小改（属于区块 8）
+更新器是否会清理 `/opt/club` 下的未知目录**未实测**；请在下一次网站发版后 `ls /opt/club/app-update/` 复核一次。
+
+### 5.5 可选：网站侧的一处小改（属于区块 8）
 
 SPA 入口 HTML 目前没有显式 `Cache-Control`，WebView 可能启发式缓存旧入口 → 表现为"网站更新了但 App 还是旧页面"。
 建议在 nginx 给 `location = /` 与 `location = /index.html` 加 `add_header Cache-Control "no-cache" always;`。
@@ -206,15 +219,15 @@ bash scripts/publish-apk.sh --apk app/build/outputs/apk/debug/app-debug.apk \
 
 ## 8. 待确认项
 
-1. 服务器 nginx location 与目录（第 5 节）——**等你确认后执行**；
-2. `version.properties` 是否在区块 3 就 bump 到 2（当前策略：**不动**，区块 7 发首个 Release 时再 bump）；
-3. 是否需要把「检查更新」也放到长按菜单/顶栏（当前只在错误面板，避免在没有 ActionBar 的主题里加菜单）。
+1. `version.properties` 是否在区块 3 就 bump 到 2（当前策略：**不动**，区块 7 发首个 Release 时再 bump）；
+2. 是否需要把「检查更新」也放到长按菜单/顶栏（当前只在错误面板，避免在没有 ActionBar 的主题里加菜单）；
+3. 真机验收 6 条（§6）何时做（需要你真机 + 同一台机器构建两个版本的包）。
 
 ---
 
 ## 9. 回滚
 
-- 代码：`git revert` 合并提交即可（本块不涉及数据库、不涉及线上配置）；
-- 服务器：把 `/etc/nginx/conf.d/club.conf.bak.app-update` 复回原位 → `nginx -t && nginx -s reload`；
+- 代码：`git revert` 合并提交即可（本块不涉及数据库）；
+- 服务器：把 `/etc/nginx/conf.d/club.conf.bak.app-update-20261011-225834` 复回原位 → `nginx -t && nginx -s reload`；
   `/opt/club/app-update/` 目录可以留着（不生效也无害）；
 - 线上开关：把 manifest 的 `latest` 置回 `null`，即刻停止推更新（`Cache-Control: no-cache`）。
