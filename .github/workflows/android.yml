@@ -14,6 +14,8 @@ name: Android
 #   本项目没有本地 Android 构建环境，若靠“跑一遍 CI 才知道错在哪”，
 #   一次小错误就要白白消耗一个完整的构建周期（~2 分钟）。
 #   预检只需要 python3，5 秒内就能抦下 XML 语法/注释、资源引用、已知陷阱。
+#   区块 4 起还有一份专项预检 scripts/preflight-feel.sh（壳内 JS 边界 / 启动页/
+#   下拉刷新接线），它仦需 bash + grep，同样在编译前跑。
 #
 # 【为何要在 APK 之前跑单测】
 #   区块 2 起，纯逻辑（上传上限、文件名清洗、导航裁决…）有了 JVM 单测。
@@ -57,6 +59,9 @@ jobs:
 
       - name: 静态预检（XML / 资源引用 / 已知陷阱）
         run: bash scripts/preflight.sh
+
+      - name: 静态预检 · 区块 4 专项（壳内 JS 边界 / 启动页 / 下拉刷新接线）
+        run: bash scripts/preflight-feel.sh
 
       - name: 安装 JDK 17
         uses: actions/setup-java@v5
@@ -143,6 +148,9 @@ jobs:
 
       - name: 静态预检（XML / 资源引用 / 已知陷阱）
         run: bash scripts/preflight.sh
+
+      - name: 静态预检 · 区块 4 专项（壳内 JS 边界 / 启动页 / 下拉刷新接线）
+        run: bash scripts/preflight-feel.sh
 
       - name: 安装 JDK 17
         uses: actions/setup-java@v5
