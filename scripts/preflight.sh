@@ -179,9 +179,11 @@ out=$(python3 - app/src/main/AndroidManifest.xml 2>&1 <<'PY'
 import re, sys
 raw = open(sys.argv[1], encoding="utf-8").read()
 problems = []
+declared = set()
 for block in re.findall(r'<uses-permission\b[^>]*>', raw, re.S):
     m = re.search(r'android:name="([^"]+)"', block)
     short = m.group(1).rsplit(".", 1)[-1] if m else ""
+    declared.add(short)
     if short in ("READ_EXTERNAL_STORAGE", "MANAGE_EXTERNAL_STORAGE", "ACCESS_MEDIA_LOCATION") \
             or short.startswith("READ_MEDIA_"):
         problems.append("禁止声明 " + short + "（文件选择走系统 SAF，不需要它）")
@@ -190,6 +192,12 @@ for block in re.findall(r'<uses-permission\b[^>]*>', raw, re.S):
         if not max_sdk or max_sdk.group(1) != "28":
             problems.append('WRITE_EXTERNAL_STORAGE 必须带 android:maxSdkVersion="28"'
                             "（只在 Android 8/9 上把下载写进公共目录，高版本不得生效）")
+    elif short == "REQUEST_DELETE_PACKAGES":
+        problems.append("禁止声明 REQUEST_DELETE_PACKAGES：壳不卸载任何应用")
+# 必需权限（区块 3）：安装自己下载的更新包必须声明它，否则安装 Intent 会被系统直接拒绝。
+for need in ("REQUEST_INSTALL_PACKAGES",):
+    if need not in declared:
+        problems.append("必须声明 " + need + "（安装自己下载的更新包需要）")
 if problems:
     sys.exit("；".join(problems))
 print("权限声明检查通过")
@@ -212,6 +220,34 @@ if grep -rq "setDestinationInExternalPublicDir" app/src/main/java; then
     || err "落盘位置必须用 DownloadPolicy.destination() 统一判定，不要在下载器里写死"
   grep -rq "Build.VERSION.SDK_INT" app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt \
     || err "落盘位置必须按 Build.VERSION.SDK_INT 分支（Android 8/9 无写权限时 pub 目录会 SecurityException）"
+fi
+
+# 3.5 更新流程（区块 3）：安装包必须走 FileProvider + 授权 flag，且必须校验 sha256
+if [ -d app/src/main/java/com/nhyzcms/clubapp/shell/update ]; then
+  if [ -z "$(code_grep 'FLAG_GRANT_READ_URI_PERMISSION' app/src/main/java/com/nhyzcms/clubapp/shell/update)" ]; then
+    err "更新安装必须带 FLAG_GRANT_READ_URI_PERMISSION，否则系统安装器读不到 content URI"
+  fi
+  if [ -z "$(code_grep 'getUriForFile' app/src/main/java/com/nhyzcms/clubapp/shell/update)" ]; then
+    err "安装更新必须通过 FileProvider（getUriForFile）交出一个文件的 content URI，不得用 file URI"
+  fi
+  if [ -z "$(code_grep 'ApkDigest\.matches\(' app/src/main/java/com/nhyzcms/clubapp/shell/update)" ]; then
+    err "更新包必须做 sha256 校验（ApkDigest.matches），不得把未校验的文件交给安装器"
+  fi
+  if [ -n "$(code_grep 'DIRECTORY_DOWNLOADS' app/src/main/java/com/nhyzcms/clubapp/shell/update)" ]; then
+    err "更新包不得写公共下载目录（语义不同且在 API 26~28 还要权限）；请留在 cacheDir/update"
+  fi
+  if [ -z "$(grep -n 'UPDATE_ALLOWED_HOSTS' app/src/main/java/com/nhyzcms/clubapp/shell/AppConfig.kt 2>/dev/null)" ]; then
+    err "更新主机白名单必须写在 AppConfig.UPDATE_ALLOWED_HOSTS（唯一真源），不要在更新代码里另起一套"
+  fi
+fi
+
+# 3.6 禁止用 raw string 承载「以引号开头/结尾」的 JSON 文本
+#   区块 3 踩过：MiniJsonTest 里用 raw string 写了一段以引号开头、以引号结尾的 JSON，
+#   正确写法是首尾各四个引号（四个连续引号组成一个内容引号 + 一个结束符）；
+#   少写一个结尾引号 → JSON 字符串未闭合 → 解析返回 null → 断言在下一行失败，
+#   报错只说 AssertionError，根因极难定位。改成用普通字符串拼 JSON 就没有这种歧义。
+if [ -n "$(code_grep '""""' app/src/main/java; code_grep '""""' app/src/test/java)" ]; then
+  err "源码里出现了连续四个引号（raw string 内容以引号开头/结尾）：改用普通字符串拼 JSON，避免首尾引号配对写错"
 fi
 
 # 3.4 密钥 / 本地配置不得入库

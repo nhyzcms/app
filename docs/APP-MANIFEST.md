@@ -7,6 +7,9 @@
 ## 1. 位置与部署
 
 - **URL（固定，写死在壳里）**：`https://8.153.145.175/app-update/manifest.json`
+- **实现状态（区块 3）**：壳侧已按本文件实现（解析见 `shell/update/UpdateManifest.kt`，
+  安全判定见 `shell/update/UpdatePolicy.kt`）。nginx 片段在 `scripts/nginx-app-update.conf`，
+  服务器目录与部署步骤在 [`../deploy/app-update/README.md`](../deploy/app-update/README.md)。
 - **为什么不放 `/media/` 或 `/app/`**：
   - `/media/` 是用户上传目录（7 天缓存 + 语义不清）；
   - `/app/...` 会被 SPA 兜底路由拦住（实测返回 index.html 200，容易认错成功）；
@@ -36,10 +39,10 @@
 | `generatedAt` | string(ISO8601) | | — | 仅作运维参考，壳不使用 |
 | `startRoute` | string | | `/#/m` | 起始路由（必须以 `/#/` 开头，壳会做前缀校验） |
 | `flags` | object | | `{}` | 功能开关（见 §3） |
-| `notice` | object | | null | 公告横幅：`{id, text, level:info\|warn, url?, dismissible:bool}` |
+| `notice` | object | | null | 公告横幅：`{id, text, level:info 或 warn, url?, dismissible:bool}` |
 | `minShellVersionCode` | int | | 0 | 低于此版本码：弹不可跳过的更新提示（紧急兼容性） |
 | `latest` | object | | null | 最新 APK 信息：`{versionCode, versionName, notes, mandatory:bool, apk:{url, sha256, size}}` |
-| `blockedVersions` | array | | `[]` | `[{versionCode, action:"block"\|"warn", message}]` |
+| `blockedVersions` | array | | `[]` | `[{versionCode, action:"block" 或 "warn", message}]` |
 | `updateSources` | array[string] | | 内置默认 | APK 下载源优先级（自托管在前） |
 
 ### 校验规则（壳侧强制，防被篡改利用）

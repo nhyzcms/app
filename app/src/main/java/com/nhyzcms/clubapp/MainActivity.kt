@@ -45,6 +45,8 @@ import com.nhyzcms.clubapp.shell.UploadLimit
 import com.nhyzcms.clubapp.shell.UrlParts
 import com.nhyzcms.clubapp.shell.WebShellChromeClient
 import com.nhyzcms.clubapp.shell.WebShellClient
+import com.nhyzcms.clubapp.shell.update.UpdateController
+import com.nhyzcms.clubapp.shell.update.UpdatePolicy
 
 /**
  * 壳的入口：一个 Activity 加一个 WebView。
@@ -57,6 +59,9 @@ import com.nhyzcms.clubapp.shell.WebShellClient
  *   ② 下载落盘（带会话 Cookie）→ [DownloadStarter] + [DownloadPolicy]
  *   ③ 长按图片/链接（保存/分享/复制/浏览器打开）→ [LongPressPolicy] + [MediaSharer]
  *   ④ 上传体积前置提示 → [UploadLimit]
+ *
+ * 区块 3 新增的三级更新（只做壳侧必需的接线，逻辑都在 shell/update 里）：
+ *   L0 网站发版即生效 / L1 清单开关与起始路由 / L2 APK 自升级 → [UpdateController]
  */
 class MainActivity : AppCompatActivity() {
 
@@ -73,6 +78,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var fileChooser: FileChooserHost
     private lateinit var downloads: DownloadStarter
     private lateinit var mediaSharer: MediaSharer
+    private lateinit var updates: UpdateController
 
     /** 等相机权限期间暂存的选择请求：权限弹窗会打断流程，必须先把回调记住。 */
     private var pendingChooser: PendingChooser? = null
@@ -142,6 +148,8 @@ class MainActivity : AppCompatActivity() {
         fileChooser = FileChooserHost(cameraCapture)
         downloads = DownloadStarter(this)
         mediaSharer = MediaSharer(this)
+        // 更新协调器（区块 3）。UA 用 lambda 延迟取，等下面 configureWebView 配好再请求。
+        updates = UpdateController(this) { webView.settings.userAgentString }
         // 上次拍完照/分享完没来得及清的临时文件在这里收尾。
         cameraCapture.cleanStaleFiles()
         mediaSharer.cleanStaleFiles()
@@ -156,8 +164,16 @@ class MainActivity : AppCompatActivity() {
         // 进程被系统回收后重建：优先恢复浏览历史，避免用户回到首页。
         val restored = savedInstanceState?.let { webView.restoreState(it) }
         if (restored == null) {
-            load(intentUrlOrNull(intent) ?: AppConfig.START_URL)
+            // 区块 3（L0）：清单开关要求时先丢掉入口 HTML 缓存，确保拿到最新页面。
+            // 只清 HTTP 缓存，不动 Cookie（登录态照旧）。
+            if (updates.shouldForceRefreshEntry()) webView.clearCache(true)
+            // 起始路由优先用清单里缓存的 startRoute（区块 3，L1）
+            load(intentUrlOrNull(intent) ?: updates.startUrl())
         }
+
+        // 更新包残留清理 + 冷启动后延迟几秒检查（不抢首屏带宽：服务器只有 3 M）
+        updates.cleanStaleFiles()
+        updates.onShellReady()
     }
 
     // ── 初始化 ────────────────────────────────────────────────────────────────
@@ -215,6 +231,10 @@ class MainActivity : AppCompatActivity() {
             onPageFinished = {
                 progress.visibility = View.GONE
                 hideError()
+            },
+            // 清单开关 externalLinkInBrowser（默认 true = 外链交系统浏览器）
+            externalLinkInBrowser = {
+                UpdatePolicy.flag(updates.flags(), "externalLinkInBrowser", true)
             },
         )
 
@@ -430,7 +450,7 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    // ── 长按菜单（区块 2）───────────────────────────────────────────────────
+    // ── 长按菜单（区块 2）────────────────────────────────────────────
 
     private fun showLongPressMenu(titleRes: Int, url: String, withImageItems: Boolean) {
         val actions = buildList {
@@ -462,7 +482,7 @@ class MainActivity : AppCompatActivity() {
     private fun performLongPressAction(action: LongPressAction, url: String) {
         when (action) {
             LongPressAction.SAVE_IMAGE ->
-                startDownload(url, webView.settings.userAgentString, null, "image/*", -1L)
+                startDownload(url, webView.settings.userAgentString, null, "image/" + "*", -1L)
 
             LongPressAction.SHARE_IMAGE -> shareImage(url)
             LongPressAction.SHARE_LINK -> shareText(url)
@@ -545,6 +565,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.browserButton).setOnClickListener {
             openExternally(lastUrl)
         }
+        // 区块 3：手动检查更新（兜底入口，正常靠冷启动自动检查）
+        findViewById<Button>(R.id.checkUpdateButton).setOnClickListener {
+            updates.checkManually()
+        }
     }
 
     // ── 错误面板 ──────────────────────────────────────────────────────────────
@@ -575,7 +599,7 @@ class MainActivity : AppCompatActivity() {
         errorPanel.visibility = View.GONE
     }
 
-    // ── 导航与生命周期 ──────────────────────────────────────────────────────
+    // ── 导航与生命周期 ────────────────────────────────────────────────
 
     private fun load(url: String) {
         lastUrl = url
@@ -608,6 +632,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         webView.onResume() // 恢复 JS 定时器与动画
+        updates.checkIfDue() // 回到前台按 30 分钟节流检查更新（区块 3）
     }
 
     override fun onPause() {
@@ -621,6 +646,9 @@ class MainActivity : AppCompatActivity() {
         pendingChooser = null
         pendingDownload = null
         fileChooser.abort()
+
+        // 区块 3：取消未完成的更新下载、清掉主线程回调（避免持有已销毁的 Activity）
+        updates.dispose()
 
         // WebView 不主动销毁会泄露 Activity。
         // ⚠️ 踩坑：API 35 上 setWebViewClient 的参数是 @NonNull，**不能传 null**

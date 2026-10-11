@@ -52,6 +52,48 @@
     <string name="camera_denied_title">需要相机权限</string>
     <string name="camera_denied_message">拍照上传需要相机权限。可在系统设置里开启后重试，也可以直接选择已有文件。</string>
 
+    <!-- 更新（区块 3；文案与 docs/UPDATE-STRATEGY.md 的流程一一对应） -->
+    <string name="action_check_update">检查更新</string>
+    <string name="action_ok">知道了</string>
+    <string name="action_exit_app">退出应用</string>
+    <string name="update_checking">正在检查更新…</string>
+    <string name="update_check_failed">检查更新失败：网络或服务器暂不可用</string>
+    <string name="toast_up_to_date">已是最新版本</string>
+
+    <string name="update_available_title">发现新版本</string>
+    <string name="update_optional_message">新版本 %1$s 已发布。\n\n%2$s</string>
+    <string name="update_mandatory_message">当前版本过低（本机 %1$s），需要更新后才能继续使用。\n\n%2$s</string>
+    <string name="update_no_notes">（本次更新没有附带说明）</string>
+    <string name="action_update_now">立即更新</string>
+    <string name="action_update_later">稍后</string>
+
+    <string name="update_downloading_title">正在下载更新</string>
+    <string name="update_downloading_starting">正在连接服务器…</string>
+    <string name="update_downloading_message">已下载 %1$s / %2$s（%3$d%%）\n\n下载完成后会自动校验并启动安装程序。</string>
+    <string name="update_downloading_unknown">已下载 %1$s</string>
+    <string name="update_download_cancelled">已取消下载（下次可接着下）</string>
+
+    <string name="update_failed_title">更新失败</string>
+    <string name="update_download_failed">更新包下载失败，请检查网络后重试。</string>
+    <string name="update_verify_failed">更新包校验未通过（可能被篡改或下载不完整），已丢弃。</string>
+    <string name="update_no_space">存储空间不足，无法下载更新包。请清理后重试。</string>
+
+    <string name="update_signature_title">拒绝安装更新</string>
+    <string name="update_signature_message">更新包的签名与本机已装版本不一致，出于安全考虑已拒绝安装。请到「关于」页找管理员确认。</string>
+
+    <string name="update_install_permission_title">需要允许安装应用</string>
+    <string name="update_install_permission_message">系统会先询问是否允许「南汇一中传媒社」安装应用。请在接下来的页面里打开开关，然后返回重试。</string>
+    <string name="update_install_failed">没有可用的安装程序，请稍后重试</string>
+
+    <string name="update_blocked_title">需要更新或改用浏览器</string>
+    <string name="update_blocked_message">当前版本已被停用。</string>
+    <string name="update_shell_too_old_message">当前版本过旧且暂时拿不到安装包。请稍后再试，或先用浏览器访问站点。</string>
+    <string name="update_no_source_message">暂时拿不到可用的更新包（服务器或备用源不可用）。请稍后再试，或先用浏览器访问站点。</string>
+
+    <string name="notice_title">公告</string>
+    <string name="notice_title_warn">提醒</string>
+    <string name="action_notice_ok">知道了</string>
+
     <!-- 无障碍 -->
     <string name="cd_webview">网站内容</string>
     <string name="cd_progress">加载进度</string>

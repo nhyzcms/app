@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-10-11T22:00:00+08:00",
+  "startRoute": "/#/m",
+  "flags": {
+    "live2d": false,
+    "panorama": true,
+    "autoUpdateCheck": true,
+    "externalLinkInBrowser": true,
+    "forceRefreshEntry": false
+  },
+  "notice": null,
+  "minShellVersionCode": 0,
+  "latest": null,
+  "blockedVersions": [],
+  "updateSources": [
+    "https://8.153.145.175/app-update/latest.apk",
+    "https://github.com/nhyzcms/app/releases/latest/download/app-release.apk"
+  ]
+}

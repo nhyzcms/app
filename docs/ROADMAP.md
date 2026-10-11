@@ -45,16 +45,25 @@
   - 长按图片保存、分享（`ACTION_SEND`）、外部链接打开；
   - 上传体积超限（>20 M）时的本地前置提示。
 - **验收**：对照 [FEATURE-MATRIX.md](FEATURE-MATRIX.md) 逐行过一遍，每行标"✅ 实测通过"；上传图片/附件成功、下载文件能落盘并在通知栏可见。
-- **风险**：Android 13+ 媒体权限細分；`tus` 分段上传在 WebView 中的中断恢复。
+- **风险**：Android 13+ 媒体权限细分；`tus` 分段上传在 WebView 中的中断恢复。
 
 ---
 
-## 区块 3 — 三级更新机制
+## 区块 3 — 三级更新机制（🟡 代码完成，待真机验收 + 服务器配置）
 
 - **目标**：① 网站更新零操作生效（L0）；② 远程开关与强制/灰度（L1）；③ APK 自升级（L2）。
-- **交付物**：`update/ManifestFetcher`、版本对比与提示 UI、断点下载、sha256 + 签名校验、`FileProvider` + 安装器 Intent、manifest 字段与解析器、`app-update/` 目录的 nginx 片段与文件部署说明。
-- **验收**：① 只改网站 → 重开 App 看到新页面（无需发 APK）；② 把 manifest 的 `latestVersionCode` 调高 → App 提示更新并能安装成功；③ 下载中途杀进程 → 重进可继续/重下；④ 篡改 APK（sha256 不匹配）→ 拒绝安装并告警。
-- **依赖**：需用户在服务器上新增一个 nginx `location`（只读静态目录）——**会在报告中先给命令，等确认后执行**。
+- **交付物**（实际落地）：
+  - `shell/update/MiniJson.kt` 零依赖 JSON 解析 + `UpdateManifest.kt`（数据模型与字段级容错解析）；
+  - `UpdatePolicy.kt`：起始路由校验、下载源白名单、sha256 格式、版本决策（纯函数，可单测）；
+  - `ManifestFetcher.kt`：no-cache、主机白名单、体积上限，失败静默；
+  - `ApkDownloader.kt`：`cacheDir/update/` + `.part` + HTTP Range 续传 + 边下边算 sha256；
+  - `ApkSignatures.kt` / `SignatureCheck.kt`：安装前比对本机与待装包的签名证书；
+  - `UpdateInstaller.kt`：FileProvider + 系统安装器 + “安装未知应用”引导；
+  - `UpdateController.kt`：检查节流（冷启动 3 s / 前台 30 min）、提示与进度 UI、公告；
+  - `scripts/nginx-app-update.conf`、`scripts/publish-apk.sh`、`deploy/app-update/`（清单模板 + 部署说明）。
+- **验收**：① 只改网站 → 重开 App 看到新页面（无需发 APK）；② 把 manifest 的 `latest.versionCode` 调高 → App 提示更新并能安装成功；③ 下载中途杀进程 → 重进可继续/重下；④ 篡改 APK（sha256 不匹配）→ 拒绝安装并告警；⑤ 换签名重打包 → 提示“签名不一致”并拒绝安装。
+- **依赖**：需用户在服务器上新增一个 nginx `location`（只读静态目录）——**报告里已给命令与片段，等确认后执行**。
+- **状态**：代码与单测完成、静态预检通过；服务器侧配置与真机验收待办（见 `docs/chunks/CHUNK-03-REPORT.md`）。
 
 ---
 
