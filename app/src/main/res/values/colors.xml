@@ -12,8 +12,19 @@
     <!-- 社徽里的浅蓝（网站 cobalt 令牌里的 brand 300），用于图标、强调色 -->
     <color name="brand_accent">#79C2FA</color>
 
-    <!-- 亮色：与网站 cobalt 令牌的浅色背景接近 -->
+    <!--
+      窗口底色 = 网页底色（浅色 #ffffff，与站点 meta name="theme-color" 的浅色值一致）。
+      区块 4 起，窗口底色/状态栏色会在运行时跟随**网页主题色**（见 shell/feel/PageTheme）；
+      这里的值只负责第一帧之前的兜底。
+    -->
     <color name="window_background">#FFFFFF</color>
     <color name="text_primary">#111827</color>
     <color name="text_secondary">#6B7280</color>
+
+    <!-- 区块 4：首屏骨架屏的占位块 -->
+    <color name="skeleton">#ECEFF3</color>
+
+    <!-- 区块 4：返回顶部浮动按钮 -->
+    <color name="fab_background">#FFFFFF</color>
+    <color name="fab_icon">#0756A2</color>
 </resources>

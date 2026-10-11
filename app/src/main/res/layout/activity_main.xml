@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   单 Activity 布局：
-    webView     — 全屏网页
-    progress    — 顶部 3dp 进度条（加载中显示）
-    errorPanel  — 原生错误面板（断网 / TLS 失败时覆盖显示，可重试）
+    swipeRefresh — 下拉刷新容器（只在网页已经回到顶部时才响应该手势）
+    webView      — 全屏网页
+    skeleton     — 首屏骨架（仅冷启动首屏显示，消除白屏；区块 4）
+    progress     — 顶部 3dp 进度条（加载中显示）
+    fabButton    — 返回顶部（区块 4，走清单开关 showBackToTop）
+    errorPanel   — 原生错误面板（断网 / TLS 失败时覆盖显示，可重试）
   区块 3 在错误面板里加了「检查更新」（可见的手动入口）。
-  区块 4 会在此基础上加 Splash、下拉刷新与沉浸式适配。
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -14,11 +16,53 @@
     android:layout_height="match_parent"
     android:background="@color/window_background">
 
-    <WebView
-        android:id="@+id/webView"
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeRefresh"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <com.nhyzcms.clubapp.shell.feel.ScrollAwareWebView
+            android:id="@+id/webView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@string/cd_webview" />
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <!-- 首屏骨架：纯色圆角块、无动画（省电，低内存设备也不掉帧） -->
+    <LinearLayout
+        android:id="@+id/skeleton"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:contentDescription="@string/cd_webview" />
+        android:background="@color/window_background"
+        android:orientation="vertical"
+        android:paddingStart="16dp"
+        android:paddingTop="28dp"
+        android:paddingEnd="16dp"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="150dp"
+            android:layout_height="22dp"
+            android:background="@drawable/bg_skeleton_block" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="150dp"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/bg_skeleton_block" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="22dp"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/bg_skeleton_block" />
+
+        <View
+            android:layout_width="220dp"
+            android:layout_height="22dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_skeleton_block" />
+    </LinearLayout>
 
     <ProgressBar
         android:id="@+id/progress"
@@ -29,6 +73,21 @@
         android:contentDescription="@string/cd_progress"
         android:max="100"
         android:progressTint="@color/brand"
+        android:visibility="gone" />
+
+    <!-- 返回顶部：滚过阈值才出现（判定见 shell/feel/FabPolicy） -->
+    <ImageView
+        android:id="@+id/fabButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="24dp"
+        android:background="@drawable/bg_fab"
+        android:contentDescription="@string/cd_back_to_top"
+        android:elevation="6dp"
+        android:padding="12dp"
+        android:src="@drawable/ic_arrow_up"
         android:visibility="gone" />
 
     <LinearLayout

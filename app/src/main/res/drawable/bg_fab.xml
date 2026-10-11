@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  区块 4「返回顶部」浮动按钮的背景。
+  用椭圆 shape 而不是引入 Material FAB：颜色跟随深浅色，且零依赖（ADR-A05）。
+  阴影由布局里的 android:elevation 提供（口径是椭圆，阴影形状正确）。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/fab_background" />
+</shape>

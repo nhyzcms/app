@@ -54,13 +54,21 @@ data class UpdateManifest(
         /** 当前清单格式版本（壳认识的最高版本）。 */
         const val SUPPORTED_SCHEMA = 1
 
-        /** 内置默认开关，与 docs/APP-MANIFEST.md §3 的表逐字一致。 */
+        /**
+         * 内置默认开关，与 docs/APP-MANIFEST.md §3 的表逐字一致。
+         * 键名一旦发布就不要再改名（旧壳读不到新键会退回默认值，但没有默认值的键会变成 false）。
+         */
         val DEFAULT_FLAGS: Map<String, Boolean> = mapOf(
             "live2d" to false,
             "panorama" to true,
             "autoUpdateCheck" to true,
             "externalLinkInBrowser" to true,
             "forceRefreshEntry" to false,
+            // 区块 4（原生手感）
+            "pullToRefresh" to true,
+            "showBackToTop" to true,
+            // 铺满状态栏（沉浸式）：默认关闭，原因见 shell/feel/EdgeToEdgePolicy 的注释
+            "edgeToEdge" to false,
         )
     }
 }

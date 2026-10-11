@@ -53,10 +53,12 @@
 | **A02** | 所有 UI/业务流程位于 Web 层 | 若在 Kotlin 里实现 UI，每次改样式都要发 APK，与"热更新优先"目标冲突。 |
 | **A03** | **不做证书固定（no pinning）** | 站点证书为 ZeroSSL DV，`SAN=8.153.145.175`，**90 天有效期**（当前实例 2026-11-26 到期）。固定指纹会在换证日整站失联；固定 CA 也随 ZeroSSL 中间证书轮换而失效。改为：HTTPS 强制 + 系统信任链 + `onReceivedSslError` 明确失败（绝不 `proceed()`）。 |
 | **A04** | `minSdk 26`（Android 8.0） | ① 支持 XML 自适应图标（仓库内不提交二进制 PNG，纯文本可审查）；② 2017 年后的机型覆盖率足够；③ 规避 API 24/25 的 WebView 兼容杂音。 |
-| **A05** | 依赖最小化 | 不引入 OkHttp/Retrofit/协程运行时以外的大件：网络请求用 `HttpURLConnection`，图片/图标用 VectorDrawable。依赖越多，APK 越大、供应链风险越高。 |
+| **A05** | 依赖最小化 | 不引入 OkHttp/Retrofit/协程运行时以外的大件：网络请求用 `HttpURLConnection`，图片/图标用 VectorDrawable。依赖越多，APK 越大、供应链风险越高。区块 4 的例外：`androidx.swiperefreshlayout`（约 +40 KB，见 CHUNK-04 报告 §3.6）。 |
 | **A06** | 桥接（JS ⇄ 原生）只在必要时做，且**按 origin 限定** | 优先用 `WebViewCompat.addWebMessageListener`（androidx.webkit，可按 origin 白名单收消息）；绝不使用全局可注入的 `addJavascriptInterface`（旧 API 在 API<17 有漏洞，且对任意页面可见）。 |
 | **A07** | 更新包分发：自托管优先 + GitHub Release 兔底 | 服务器在国内（3 M 带宽、无 CDN），从本站下载 APK 才快；GitHub 只作归档与公开下载页。manifest 与 APK 均为公开只读资源，不含任何密钥。 |
 | **A08** | 单 Activity + 单 WebView，不引入导航框架 | 站点是 HashRouter SPA，路由全在网页内；原生只需一个宿主 Activity。不引入 Compose Navigation / Fragment 堆栈。 |
+| **A09** | 沉浸式：**默认不铺满状态栏**，只做“配色沉浸” | Android WebView 的 `env(safe-area-inset-*)` 只反映屏幕缺口（display cutout）、通常为 0，铺满会让网页 sticky 顶栏被状态栏压住。因此铺满做成清单开关 `edgeToEdge`（默认 false）；默认改为让状态栏 / 导航栏 / 窗口底色跟随网页 `meta theme-color`（`shell/feel/PageTheme`）。见 [chunks/CHUNK-04-REPORT.md](chunks/CHUNK-04-REPORT.md) §3.1。 |
+| **A10** | 壳内执行 JS：只允许**固定常量脚本** | 探测网页主题色 / 滚动位置与“返回顶部”需要执行 JS；一旦拼接变量就成了注入口子。禁止 `addJavascriptInterface`、禁止 `evaluateJavascript` 字符串拼接、禁止 `loadUrl("javascript:…")`（`scripts/preflight.sh` 已固化）。 |
 
 ---
 
@@ -69,6 +71,7 @@
 | `shell/WebShellClient.kt` | `shouldOverrideUrlLoading` 导航裁决、`onReceivedSslError` 处理、主文档错误处理、各页面事件回调 | 下载具体实现（→ 区块 2） |
 | `shell/WebShellChromeClient.kt` | 进度回调、控制台日志（仅 debug）、（区块 2）文件选择器、（区块 4）全屏视频 | — |
 | `update/*`（区块 3） | 拉取 `app-manifest.json`、版本对比、下载与校验、调用安装器 | 决定"是否强制更新"（由 manifest 声明） |
+| `shell/feel/*`（区块 4） | 原生手感：主题色探测与解析（`PageTheme` / `PageStateProbe`）、滚动感知 WebView、下拉刷新 / 返回顶部 / 返回键的纯逻辑策略，以及把它们接线到窗口的 `FeelHost` | 网页内容与路由（仍属 Web 层）；不做 JS 桥接 |
 | `bridge/*`（按需） | 向网页暴露版本号、`openExternal`、`share`、`toast` 等白名单方法 | 任何文件系统/隐私数据的宽接口 |
 
 ---
@@ -118,6 +121,8 @@ App 在默认 UA 后附加： `NhyzClubApp/<versionName> (Android; <versionCode>
 | 实时消息 | Channels/WebSocket | 前台保持连接；后台不保活（区块 5 再评） |
 | 静态缓存 | 带 contenthash 的资源 1y immutable | WebView 缓存策略直接受益，不需要额外做本地包 |
 | 无 Service Worker | 已确认仓库无 SW | 离线兜底由壳提供（原生错误页 + 重试） |
+| 网页主题 | `meta[name=theme-color]` 随主题改写（浅 `#ffffff` / 深 `#080f17`） | 壳每 2 s 读一次并同步状态栏 / 导航栏 / 窗口底色（区块 4） |
+| `viewport-fit=cover` + `env(safe-area-inset-top)` | 站点已写，但 **Android WebView 里该值为 0** | 不铺满状态栏（ADR-A09）；做真 edge-to-edge 需区块 8 配合注入安全区高度 |
 
 ---
 
@@ -125,11 +130,12 @@ App 在默认 UA 后附加： `NhyzClubApp/<versionName> (Android; <versionCode>
 
 ### 6.1 冷启动
 ```
-icon → MainActivity.onCreate
-  → restoreState(savedInstanceState) 存在？→ 恢复（不重载）
-  → 否则 load START_URL（/#/m 或 manifest 指定的起始路由）
+icon → 启动页（Theme_ClubApp_Splash；API 31+ 走系统 SplashScreen API）
+  → MainActivity.onCreate: setTheme(Theme_ClubApp) → 读清单开关 → 先按系统深浅色给一版窗口配色
+  → restoreState(savedInstanceState) 存在？→ 恢复（不重载、不显示骨架）
+  → 否则：显示首屏骨架 → load START_URL（/#/m 或 manifest 指定的起始路由）
   → onPageStarted: 显示顶部进度条
-  → onPageFinished: 隐藏进度条（错误时切错误面板）
+  → onPageFinished: 隐藏进度条/骨架（错误时切错误面板）→ 开始每 2 s 一次的主题/滚动探测
 ```
 
 ### 6.2 导航裁决（`shouldOverrideUrlLoading`）
@@ -159,6 +165,20 @@ onReceivedSslError → handler.cancel() → 原生错误面板
               → 交给系统安装器（REQUEST_INSTALL_PACKAGES）
 ```
 
+### 6.5 原生手感（区块 4）
+```
+每次页面渲染（onPageFinished）
+  → 收刷新圈 / 淡出骨架 / 刷新「返回顶部」按钮状态
+  → 立刻读一次网页主题色（不等轮询周期）
+前台每 2 s（PageStateProbe，仅可见时）
+  → 读 meta theme-color 与 window.pageYOffset（固定常量脚本）
+  → 配色变了 → 同步状态栏 / 导航栏 / 窗口底色 + 图标明暗
+  → 滚动位置 → 兜底校正下拉刷新判断与「返回顶部」按钮
+下拉刷新（SwipeRefreshLayout）
+  → 仅当网页已回到顶部（ScrollAwareWebView 同步上报）+ 开关打开 + 无错误面板
+  → 超过 15 s 未完成 → 自动停止刷新圈
+```
+
 ---
 
 ## 7. 生命周期与状态恢复
@@ -166,6 +186,7 @@ onReceivedSslError → handler.cancel() → 原生错误面板
 - Activity `configChanges` 声明旋转/分屏等，避免旋转时重建 WebView（重建会丢页面状态）；
 - 系统回收进程后重建：`WebView.saveState/restoreState` 恢复浏览历史；
 - 登录态由 Cookie 保存（`CookieManager` 默认持久化于 App 私有目录），**无需自建 Token 存储**；
+- 网页主题色探测（`PageStateProbe`）只在 Activity 可见时轮询（`onResume` 起、`onPause` 停），不会在后台耗电；
 - 退出登录/清除数据：提供"清除缓存"入口（区块 4），会同时清 Cookie（即登出）。
 
 ---

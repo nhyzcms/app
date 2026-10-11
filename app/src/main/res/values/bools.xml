@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      区块 4：系统栏（状态栏 / 导航栏）图标是否用「深色」。
+      亮色底用深色图标，深色底用浅色图标。
+
+      为什么做成 bool 资源：values-night 里的同名 style 是**整体替换**而非合并，
+      两边各写一份 style 很容易漏 item（漏掉 windowBackground 就会让深色下的启动页背景丢失）。
+      颜色与这个开关都交给资源系统按夜间模式自动切换，themes 只需要一份。
+    -->
+    <bool name="light_system_bar_icons">true</bool>
+</resources>
