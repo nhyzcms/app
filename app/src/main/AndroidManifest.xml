@@ -41,6 +41,7 @@
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="false"
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
@@ -54,12 +55,15 @@
         <!--
           configChanges：避免旋转/分屏/深色切换时重建 Activity（重建会丢 WebView 页面状态）。
           launchMode=singleTask：深链复用同一个实例，不会堆出多个 WebView。
+          theme：区块 4 的启动页主题（windowBackground = 纯色 + 社徽），
+                 MainActivity.onCreate 第一件事就 setTheme(R.style.Theme_ClubApp) 切回常规主题。
         -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode|density|fontScale"
             android:exported="true"
             android:launchMode="singleTask"
+            android:theme="@style/Theme.ClubApp.Splash"
             android:windowSoftInputMode="adjustResize">
 
             <intent-filter>

@@ -108,8 +108,12 @@ tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }.co
 }
 
 dependencies {
-    // 刻意只保留 4 个运行期依赖：体积与供应链风险最小化（ADR-A05）
+    // 运行期依赖刻意保持最少：体积与供应链风险最小化（ADR-A05）。
+    // 区块 4 新增 swiperefreshlayout（下拉刷新）：Jetpack 官方组件，只带
+    // annotation / core / interpolator 三个小传递依赖，APK 增量约 40 KB；
+    // 若手写下拉刷新的手势状态机，代码量更大且本地无真机可调参，不划算。
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.webkit:webkit:1.12.1")   // 后续 JS 桥接（WebMessageListener）用
