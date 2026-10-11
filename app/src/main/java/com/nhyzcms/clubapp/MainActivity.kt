@@ -1,12 +1,20 @@
 package com.nhyzcms.clubapp
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -16,11 +24,22 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.nhyzcms.clubapp.shell.AppConfig
+import com.nhyzcms.clubapp.shell.CameraCapture
+import com.nhyzcms.clubapp.shell.DownloadPolicy
+import com.nhyzcms.clubapp.shell.DownloadStarter
+import com.nhyzcms.clubapp.shell.FileChooserHost
+import com.nhyzcms.clubapp.shell.LongPressPolicy
 import com.nhyzcms.clubapp.shell.NavDecision
 import com.nhyzcms.clubapp.shell.NavPolicy
+import com.nhyzcms.clubapp.shell.PermissionsPolicy
 import com.nhyzcms.clubapp.shell.ShellErrorKind
+import com.nhyzcms.clubapp.shell.UploadLimit
 import com.nhyzcms.clubapp.shell.UrlParts
 import com.nhyzcms.clubapp.shell.WebShellChromeClient
 import com.nhyzcms.clubapp.shell.WebShellClient
@@ -28,8 +47,14 @@ import com.nhyzcms.clubapp.shell.WebShellClient
 /**
  * 壳的入口：一个 Activity 加一个 WebView。
  *
- * 职责边界（重要）：本类不做任何业务判断（登录、路由、权限），
- * 只负责把网页跑起来与把原生能力接上去。详见 docs/ARCHITECTURE.md 第 4 节。
+ * 职责边界（重要）：本类不做任何业务判断（登录、路由、上传协议），
+ * 只负责把网页跑起来、把原生能力接上去。详见 docs/ARCHITECTURE.md 第 4 节。
+ *
+ * 区块 2 新增的四条能力：
+ *   ① input type=file 选择（含“拍照”入口）→ [FileChooserHost] + [CameraCapture]
+ *   ② 下载落盘（带会话 Cookie）→ [DownloadStarter]
+ *   ③ 长按图片/链接 → [LongPressPolicy] + 原生菜单
+ *   ④ 上传体积前置提示 → [UploadLimit]
  */
 class MainActivity : AppCompatActivity() {
 
@@ -42,10 +67,53 @@ class MainActivity : AppCompatActivity() {
     /** 最后一次加载或失败的地址，供“重试”与“用浏览器打开”使用。 */
     private var lastUrl: String = AppConfig.START_URL
 
+    private lateinit var cameraCapture: CameraCapture
+    private lateinit var fileChooser: FileChooserHost
+    private lateinit var downloads: DownloadStarter
+
+    /** 等相机权限期间暂存的选择请求：权限弹窗会打断流程，必须先把回调记住。 */
+    private var pendingChooser: PendingChooser? = null
+
+    /** 本进程内拒绝过相机权限：只影响本次会话，下次启动再给一次机会。 */
+    private var cameraDeniedInSession = false
+
+    private class PendingChooser(
+        val callback: ValueCallback<Array<Uri>>,
+        val params: WebChromeClient.FileChooserParams,
+    )
+
+    /** 长按菜单里的动作（用枚举，而不是拿显示文案去比较）。 */
+    private enum class LongPressAction { SAVE_IMAGE, SHARE_LINK, COPY_LINK, OPEN_BROWSER }
+
+    /** 文件选择 / 拍照的结果统一回到 [handleChooserResult]。 */
+    private val chooserLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            handleChooserResult(result.resultCode, result.data)
+        }
+
+    /** 相机权限：拿到结果后再开选择器（“拍照”入口能不能用，取决于这一下）。 */
+    private val cameraPermissionLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val pending = pendingChooser ?: return@registerForActivityResult
+            pendingChooser = null
+            if (!granted) {
+                cameraDeniedInSession = true
+                explainCameraDenied()
+            }
+            // 无论授没授权都要把选择器开起来，否则网页那个 input 会一直卡着。
+            launchChooser(pending.callback, pending.params, includeCamera = granted)
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         bindViews()
+
+        cameraCapture = CameraCapture(this)
+        fileChooser = FileChooserHost(cameraCapture)
+        downloads = DownloadStarter(this)
+        // 上次拍完照没来得及清的临时文件在这里收尾（见 CameraCapture 注释）。
+        cameraCapture.cleanStaleFiles()
 
         // release 包关闭 WebView 远程调试（安全文档第 2 节）；debug 包保留 chrome://inspect 能力。
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
@@ -129,14 +197,227 @@ class MainActivity : AppCompatActivity() {
                 }
             },
             log = { message -> if (BuildConfig.DEBUG) Log.d(TAG, message) },
+            onShowFileChooser = ::handleFileChooser,
         )
 
-        // TODO（区块 2）：改为 DownloadManager 加会话 Cookie 与通知栏进度。
-        // 目前仅提示：WebView 里的下载默认不生效，不能让它静默无反应。
-        webView.setDownloadListener { url, _, _, _, _ ->
-            Log.i(TAG, "下载请求（区块 2 实现）：host=" + hostOf(url))
-            toast(R.string.toast_download_todo)
+        // 下载：WebView 自己不会落盘，交给系统 DownloadManager（带会话 Cookie，见 DownloadStarter）。
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
+            startDownload(url, userAgent, contentDisposition, mimeType, contentLength)
         }
+
+        // 长按：只在图片/链接上接管；其它命中（文本选择、输入框、电话/邮箱/地图）返回 false 交回系统。
+        webView.setOnLongClickListener {
+            val hit = webView.hitTestResult
+            when (val target = LongPressPolicy.classify(hit.type, hit.extra)) {
+                is LongPressPolicy.Target.Image -> {
+                    showLongPressMenu(R.string.dialog_image_actions, target.url, withSaveImage = true)
+                    true
+                }
+                is LongPressPolicy.Target.Link -> {
+                    showLongPressMenu(R.string.dialog_link_actions, target.url, withSaveImage = false)
+                    true
+                }
+                LongPressPolicy.Target.None -> false
+            }
+        }
+    }
+
+    // ── 文件选择 / 拍照（区块 2）─────────────────────────────────────────────
+
+    /**
+     * 网页 input type=file 被点击。
+     *
+     * 只要返回 true，就必须保证 callback 最终被回调一次（见 [FileChooserHost] 的注释）。
+     * 相机权限还没拿到时，要先申请权限再开选择器 —— 选择器一开，我们就没时机插权限申请了。
+     */
+    private fun handleFileChooser(
+        callback: ValueCallback<Array<Uri>>,
+        params: WebChromeClient.FileChooserParams,
+    ): Boolean {
+        val wantCamera = PermissionsPolicy.shouldOfferCapture(params.isCaptureEnabled, params.acceptTypes) &&
+            !cameraDeniedInSession &&
+            hasCameraHardware()
+
+        if (wantCamera && !hasCameraPermission()) {
+            pendingChooser = PendingChooser(callback, params)
+            cameraPermissionLauncher.launch(PermissionsPolicy.CAMERA)
+            return true
+        }
+        launchChooser(callback, params, includeCamera = wantCamera)
+        return true
+    }
+
+    private fun launchChooser(
+        callback: ValueCallback<Array<Uri>>,
+        params: WebChromeClient.FileChooserParams,
+        includeCamera: Boolean,
+    ) {
+        val intent = runCatching { fileChooser.start(params, includeCamera, callback) }.getOrNull()
+        if (intent == null) {
+            // 构建失败也要把回调释放掉，否则网页 input 卡死。
+            fileChooser.abort()
+            Log.w(TAG, "无法构建文件选择器 Intent")
+            toast(R.string.toast_no_file_picker)
+            return
+        }
+        try {
+            chooserLauncher.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            fileChooser.abort()
+            toast(R.string.toast_no_file_picker)
+        }
+    }
+
+    private fun handleChooserResult(resultCode: Int, data: Intent?) {
+        val captured = cameraCapture.consumeCaptureResult(resultCode, data)
+        val uris: Array<Uri>? = when {
+            resultCode != RESULT_OK -> null
+            captured != null -> arrayOf(captured)
+            else -> WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+        }
+        if (uris.isNullOrEmpty()) {
+            fileChooser.deliver(null)
+            return
+        }
+        when (val verdict = UploadLimit.check(probeSizes(uris))) {
+            is UploadLimit.Verdict.Allowed -> fileChooser.deliver(uris)
+            is UploadLimit.Verdict.Exceeded -> confirmOversizeUpload(verdict, uris)
+        }
+    }
+
+    /** 超过站点上限（20 MB）时先问一句，避免“传到一半被服务器 413”。 */
+    private fun confirmOversizeUpload(verdict: UploadLimit.Verdict.Exceeded, uris: Array<Uri>) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.upload_too_large_title)
+            .setMessage(getString(R.string.upload_too_large_message, UploadLimit.formatBytes(verdict.totalBytes)))
+            .setCancelable(false)
+            .setPositiveButton(R.string.action_upload_continue) { _, _ -> fileChooser.deliver(uris) }
+            // 回传 null = 网页看起来像“用户没选文件”，不会触发上传。
+            .setNegativeButton(R.string.action_upload_cancel) { _, _ -> fileChooser.deliver(null) }
+            .show()
+    }
+
+    /**
+     * 取所选文件的字节数；拿不到（部分云盘 provider 不返回 SIZE）就返回 null，交给网页去发现。
+     * 异常一律吞掉：量体积失败不能让上传流程断掉。
+     */
+    private fun probeSizes(uris: Array<Uri>): List<Long?> = uris.map { uri ->
+        runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (cursor.moveToFirst() && index >= 0 && !cursor.isNull(index)) cursor.getLong(index) else null
+            }
+        }.getOrNull()
+    }
+
+    private fun hasCameraPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, PermissionsPolicy.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    /** 没有摄像头的设备不申请、也不给拍照入口。 */
+    private fun hasCameraHardware(): Boolean =
+        packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
+
+    /** 被拒后的引导：只有“禁止且不再询问”才值得弹设置页。 */
+    private fun explainCameraDenied() {
+        toast(R.string.toast_camera_denied)
+        if (shouldShowRequestPermissionRationale(PermissionsPolicy.CAMERA)) return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.camera_denied_title)
+            .setMessage(R.string.camera_denied_message)
+            .setPositiveButton(R.string.action_open_settings) { _, _ -> openAppSettings() }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    private fun openAppSettings() {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", packageName, null),
+        )
+        runCatching { startActivity(intent) }
+    }
+
+    // ── 下载（区块 2）───────────────────────────────────────────────────────
+
+    private fun startDownload(
+        url: String,
+        userAgent: String?,
+        contentDisposition: String?,
+        mimeType: String?,
+        contentLength: Long,
+    ) {
+        val rejection = DownloadPolicy.rejectionOf(url)
+        if (rejection != null) {
+            // 日志脱敏：只记 host，不记完整 URL 与查询串
+            Log.w(TAG, "拒绝下载：$rejection host=" + hostOf(url))
+            toast(R.string.toast_download_unsupported)
+            return
+        }
+        val id = downloads.start(
+            url = url,
+            userAgent = userAgent?.takeIf { it.isNotBlank() } ?: webView.settings.userAgentString,
+            contentDisposition = contentDisposition,
+            mimeType = mimeType,
+            contentLength = contentLength,
+        )
+        if (id == null) {
+            toast(R.string.toast_download_failed)
+            return
+        }
+        val toPublicDir = DownloadPolicy.of(Build.VERSION.SDK_INT) == DownloadPolicy.Destination.PUBLIC_DOWNLOADS
+        toast(if (toPublicDir) R.string.toast_download_started else R.string.toast_download_started_app_dir)
+    }
+
+    // ── 长按菜单（区块 2）───────────────────────────────────────────────────
+
+    private fun showLongPressMenu(titleRes: Int, url: String, withSaveImage: Boolean) {
+        val actions = buildList {
+            if (withSaveImage && DownloadPolicy.rejectionOf(url) == null) add(LongPressAction.SAVE_IMAGE)
+            add(LongPressAction.SHARE_LINK)
+            add(LongPressAction.COPY_LINK)
+            add(LongPressAction.OPEN_BROWSER)
+        }
+        val labels = actions.map { getString(labelOf(it)) }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(titleRes)
+            .setItems(labels) { _, which -> performLongPressAction(actions[which], url) }
+            .show()
+    }
+
+    private fun labelOf(action: LongPressAction): Int = when (action) {
+        LongPressAction.SAVE_IMAGE -> R.string.action_save_image
+        LongPressAction.SHARE_LINK -> R.string.action_share_link
+        LongPressAction.COPY_LINK -> R.string.action_copy_link
+        LongPressAction.OPEN_BROWSER -> R.string.action_open_browser
+    }
+
+    private fun performLongPressAction(action: LongPressAction, url: String) {
+        when (action) {
+            LongPressAction.SAVE_IMAGE ->
+                startDownload(url, webView.settings.userAgentString, null, "image/*", -1L)
+
+            LongPressAction.SHARE_LINK -> shareText(url)
+            LongPressAction.COPY_LINK -> copyToClipboard(url)
+            LongPressAction.OPEN_BROWSER -> openExternally(url)
+        }
+    }
+
+    private fun shareText(url: String) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, url)
+        }
+        try {
+            startActivity(Intent.createChooser(intent, getString(R.string.dialog_share_link)))
+        } catch (e: ActivityNotFoundException) {
+            toast(R.string.toast_share_unavailable)
+        }
+    }
+
+    private fun copyToClipboard(text: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("link", text))
+        toast(R.string.toast_copied)
     }
 
     /** 返回键：先关错误面板，再网页后退，最后才退出应用。 */
@@ -241,6 +522,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // 未完成的选择请求必须在销毁前释放，否则网页那个 input 会一直卡着。
+        // （abort 会顺带清掉拍照的临时文件）
+        pendingChooser = null
+        fileChooser.abort()
+
         // WebView 不主动销毁会泄露 Activity。
         // ⚠️ 踩坑：API 35 上 setWebViewClient 的参数是 @NonNull，**不能传 null**
         //（会报 “Null cannot be a value of a non-null type” 而编译失败），
