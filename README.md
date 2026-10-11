@@ -35,7 +35,7 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
 ├── docs/                           ← 设计文档（先看 ARCHITECTURE，再看 ROADMAP）
 │   ├── ARCHITECTURE.md             ← 分层、组件职责、与网站的契约
 │   ├── UPDATE-STRATEGY.md          ← 三级更新模型（热/温/冷）
-│   ├── SECURITY.md                 ← 威胁模型与已实施的安全控制
+│   ├── SECURITY.md                 ← 威胁模型、权限清单、安全控制
 │   ├── ROADMAP.md                  ← 任务分块（本项目的推进方式）
 │   ├── BUILD.md                    ← 本地与 CI 构建、签名、发版 SOP
 │   ├── CI-WORKFLOW.md              ← CI 工作流说明与发版前置条件
@@ -53,18 +53,20 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
     │   ├── java/com/nhyzcms/clubapp/
     │   │   ├── MainActivity.kt          入口：装载 WebView、错误面板、能力接线
     │   │   └── shell/
-    │   │       ├── AppConfig.kt             站点地址、UA 标记、Host 白名单
+    │   │       ├── AppConfig.kt             站点地址、UA 标记、Host 白名单、FileProvider authority
     │   │       ├── NavPolicy.kt             导航裁决（纯函数，可单测）
     │   │       ├── ShellErrorKind.kt        错误分类
     │   │       ├── WebShellClient.kt        导航拦截 / 外链 / TLS 失败处理
     │   │       ├── WebShellChromeClient.kt  进度 / 控制台日志 / 文件选择钩子
     │   │       ├── FileChooserHost.kt       input[type=file] 入口（回调恰好一次）
     │   │       ├── CameraCapture.kt         拍照：FileProvider 临时文件 + 相机 Intent
-    │   │       ├── PermissionsPolicy.kt     运行时权限策略（只申请相机）
+    │   │       ├── PermissionsPolicy.kt     运行时权限策略（相机 + 仅 8/9 的写存储）
     │   │       ├── UploadLimit.kt           20 MB 上传上限的本地前置判定
-    │   │       ├── DownloadPolicy.kt        下载落盘 / 文件名 / 可下载性（纯函数）
+    │   │       ├── DownloadPolicy.kt        落盘位置 / 文件名 / 可下载性（纯函数）
     │   │       ├── DownloadStarter.kt       交给系统 DownloadManager（带会话 Cookie）
-    │   │       └── LongPressPolicy.kt       长按命中判定（图片 / 链接）
+    │   │       ├── LongPressPolicy.kt       长按命中判定（图片 / 链接）
+    │   │       ├── MediaSharePolicy.kt      分享图片的前置判定（纯函数）
+    │   │       └── MediaSharer.kt           分享图片文件本体（缓存 → FileProvider → ACTION_SEND）
     │   └── res/                         字符串、主题（跟随系统深色）、网络安全配置、
     │                                    FileProvider 路径、纯矢量图标、主界面布局
     └── src/test/java/…                  纯逻辑单测（不需要设备；`gradle :app:testDebugUnitTest`）
@@ -120,10 +122,12 @@ gradle :app:testDebugUnitTest
 - **不做证书固定**：站点证书是 90 天 ZeroSSL DV，固定必然在换证日砖掉；改为「HTTPS 强制 + 系统信任链 + TLS 失败明确报错」；
 - 不信任用户安装的 CA（关闭 user trust anchors），防中间人；
 - 站内导航白名单 = 本站 host；其它域名一律交给系统浏览器，未知 scheme 一律拦截；
-- **不申请任何存储权限**：文件选择走系统 SAF（按 URI 临时授权）、下载走 `DownloadManager`
-  （Android 10 及以上写公共“下载”目录不需权限）；Android 8/9 降级落到 App 目录。
-  运行时权限只有**相机**（且只在“将要提供拍照入口”时才申请）；
-- 下载必须**手动带会话 Cookie**（DownloadManager 不共享 WebView 的 CookieJar）；
+- **权限只有 4 个**（完整清单见 SECURITY.md §2.1）：
+  - 文件选择走系统 SAF、分享图片走 App 缓存，都不需要读取类权限；
+  - `WRITE_EXTERNAL_STORAGE` **只在 Android 8/9 上**用来把下载写进公共「下载」目录
+    （`maxSdkVersion="28"`，且仅在下载时申请；拒了退 App 目录），preflight 会强制校验这个限定；
+  - `CAMERA` 只在“将要提供拍照入口”时申请；
+- 所有带会话的请求（`DownloadManager`、分享图片）**必须手动带 Cookie**；
 - 更新包必须**校验 sha256 + 签名一致**才允许安装；安装来源链接只允许本站 / GitHub Releases；
 - 密钥永不入库：keystore 只存在于 GitHub Secrets（base64）；
 - Release 构建关闭 WebView 远程调试（`BuildConfig.DEBUG` 才开）。
@@ -159,13 +163,13 @@ gradle :app:testDebugUnitTest
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 分层架构、组件职责、与网站仓库的契约 |
 | [UPDATE-STRATEGY.md](docs/UPDATE-STRATEGY.md) | 三级更新模型、发布/回滚 SOP |
-| [SECURITY.md](docs/SECURITY.md) | 威胁模型、安全控制、自查清单 |
+| [SECURITY.md](docs/SECURITY.md) | 威胁模型、权限清单、安全控制 |
 | [ROADMAP.md](docs/ROADMAP.md) | 分块计划与验收标准 |
 | [BUILD.md](docs/BUILD.md) | 构建、签名、版本号规则、发布步骤 |
 | [CI-WORKFLOW.md](docs/CI-WORKFLOW.md) | CI 行为与发版前置条件 |
 | [APP-MANIFEST.md](docs/APP-MANIFEST.md) | 远程配置清单字段契约 |
 | [FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md) | 网站功能覆盖台账 |
-| [chunks/CHUNK-02-REPORT.md](docs/chunks/CHUNK-02-REPORT.md) | 区块 2（文件/拍照/下载/长按）交付说明 |
+| [chunks/CHUNK-02-REPORT.md](docs/chunks/CHUNK-02-REPORT.md) | 区块 2（文件/拍照/下载/长按/分享）交付说明 |
 
 ---
 
