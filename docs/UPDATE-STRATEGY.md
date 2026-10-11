@@ -50,6 +50,7 @@ App 界面本身就是远程页面（`https://8.153.145.175/`）。网站一发�
   `UpdateManifestCodec`（字段级容错）→ `UpdatePolicy`（安全判定）→ `UpdateStore`
   （把 `startRoute`/`flags` **落盘、下次冷启动生效**，避免首屏等网络）。
   手动入口在原生错误面板的「检查更新」按钮上（正常使用靠自动检查，不打扰用户）。
+- **字段契约**：[APP-MANIFEST.md](APP-MANIFEST.md)
 - 可实现的典型动作：
   - `startRoute`：改起始页（如从 `/#/m` 改到 `/#/app`）—— 不升级也能上线新首页；
   - `flags.live2d=false`：紧急关掉吃带宽的 Live2D；
