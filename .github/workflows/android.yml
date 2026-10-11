@@ -5,12 +5,14 @@ name: Android
 #   * 推 tag vX.Y.Z      → 建签名 release APK 并自动创建 GitHub Release
 #   * 手动 workflow_dispatch 便于重跑
 #
-# 首次上线：2026-10-11（区块 1 收尾）
-# 踩坑记录：首次跑挂了，失败步骤是 android-actions/setup-android@v3（8 秒内失败）。
-#           已不再使用该 action——runner 本就预装 Android SDK，改用自写步骤，
-#           少一个第三方依赖 = 少一个故障点。
-# 注意：release 作业依赖 4 个 Secrets，未配置时会主动失败——这是故意的：
-#       宁可失败，也不发出一个装不上的未签名包。见 docs/BUILD.md §3。
+# 【为何构建步骤要 tee + 写 Step Summary】
+#   Actions 的原始日志需要仓库管理员权限才能通过 API 读取，
+#   而运行摘要（step summary）可以通过 check-runs API 公开读到。
+#   把报错尾巴写进摘要，是为了让助手/维护者不用开浏览器就能定位 CI 故障。
+#
+# 【已踩过的坑】
+#   1) android-actions/setup-android@v3 失败（8 秒内退出）——已弃用，改自写脚本；
+#   2) gradle :app:versionInfo 找不到任务（versionInfo 注册在根项目）——已改为纯 shell 打印。
 on:
   push:
     branches: ["**"]
@@ -53,11 +55,32 @@ jobs:
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
-      - name: 打印版本信息
-        run: gradle :app:versionInfo -q
+      - name: 打印环境与版本信息
+        run: |
+          echo "分支：$GITHUB_REF_NAME  SHA：$GITHUB_SHA"
+          echo "--- version.properties ---"
+          cat version.properties
+          echo "--- java ---"
+          java -version 2>&1 | head -3
 
       - name: 构建 debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        run: |
+          set +e
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            {
+              echo "## ❌ Debug 构建失败"
+              echo ""
+              echo '```text'
+              tail -n 150 build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::构建失败，末尾 150 行已写入本步骤摘要（Summary）"
+            exit "$code"
+          fi
+          echo "## ✅ Debug 构建成功" >> "$GITHUB_STEP_SUMMARY"
+          ls -lh app/build/outputs/apk/debug/
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
@@ -117,7 +140,22 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle :app:assembleRelease --stacktrace
+        run: |
+          set +e
+          gradle :app:assembleRelease --stacktrace 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            {
+              echo "## ❌ Release 构建失败"
+              echo ""
+              echo '```text'
+              tail -n 150 build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::构建失败，末尾 150 行已写入本步骤摘要（Summary）"
+            exit "$code"
+          fi
+          echo "## ✅ Release 构建成功" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 重命名并生成 SHA-256
         run: |
