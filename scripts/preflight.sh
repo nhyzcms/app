@@ -101,44 +101,56 @@ print(f"R.* 引用检查通过（资源总数：{sum(len(v) for v in known.value
 PY
 
 # ── 3. 已知陷阱（每踩一次就加一条）──────────────────────────────────────
+#
+# 【重要】代码模式只在“非注释行”里搜。
+#   我们习惯在注释里写“这里绝不能调 handler.proceed()”这类警示语，
+#   直接全文 grep 会让自己的警示注释触发规则
+#   （区块 1 把报错原文抄进注释踩过一次；区块 2 加 .proceed() 规则时又踩了一次，
+#    因此固化成 code_grep 这个助手，以后新增规则一律用它）。
+code_grep() {
+  local pattern="$1"
+  local path="${2:-app/src/main/java}"
+  grep -rn --include='*.kt' -E "$pattern" "$path" 2>/dev/null \
+    | grep -vE ':[0-9]+:[[:space:]]*(//|\*|/\*)' \
+    || true
+}
 
-# 3.1 WebView 安全基线（区块 1 踩过 / 安全文档第 2、4 节）
-if grep -rn "setWebViewClient(null)" app/src/main/java >/dev/null 2>&1; then
+if [ -n "$(code_grep 'setWebViewClient\(null\)')" ]; then
   err "setWebViewClient 不接受 null（API 35 参数是 @NonNull），请改用空实现或直接不设"
 fi
-if grep -rnE "\bsafeBrowsingEnabled[[:space:]]*=" app/src/main/java >/dev/null 2>&1; then
+if [ -n "$(code_grep '\bsafeBrowsingEnabled[[:space:]]*=')" ]; then
   err "WebSettings.safeBrowsingEnabled 没有 getter，不能用 Kotlin 属性语法，请改用 setSafeBrowsingEnabled(...)"
 fi
-if grep -rn "addJavascriptInterface" app/src/main/java >/dev/null 2>&1; then
+if [ -n "$(code_grep 'addJavascriptInterface')" ]; then
   err "禁止 addJavascriptInterface（安全文档第 4 节：桥接只能走 WebViewCompat.addWebMessageListener 并按 origin 限定）"
 fi
-if grep -rn "\.proceed()" app/src/main/java >/dev/null 2>&1; then
+if [ -n "$(code_grep '\.proceed\(\)')" ]; then
   err "onReceivedSslError 里绝不能调 handler.proceed()（安全文档第 2 节：TLS 失败必须显式失败）"
 fi
 
-# 3.2 存储/媒体类权限一个都不要（安全文档第 2、7 节；区块 2 定调）
+# 3.1 存储/媒体类权限一个都不要（安全文档第 2、7 节；区块 2 定调）
 if grep -nE '<uses-permission[^>]*(READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|READ_MEDIA_|MANAGE_EXTERNAL_STORAGE|ACCESS_MEDIA_LOCATION)' \
      app/src/main/AndroidManifest.xml >/dev/null 2>&1; then
   err "清单里出现了存储/媒体类权限：文件选择走系统 SAF、下载走 DownloadManager 即可，不需要它们（docs/SECURITY.md 第 2 节）"
 fi
 
-# 3.3 FileProvider 三处必须一致（不一致时只有真机运行才会报 SecurityException）
+# 3.2 FileProvider 三处必须一致（不一致时只有真机运行才会报 SecurityException）
 if grep -rq "getUriForFile" app/src/main/java; then
   grep -qF 'android:authorities="${applicationId}.fileprovider"' app/src/main/AndroidManifest.xml \
-    || err "用了 getUriForFile，但清单里没有 android:authorities=\"\${applicationId}.fileprovider\""
+    || err "用了 getUriForFile，但清单里没有 ${applicationId}.fileprovider 这套 authority"
   grep -rq "BuildConfig.APPLICATION_ID" app/src/main/java/com/nhyzcms/clubapp/shell \
     || err "FileProvider authority 必须用 BuildConfig.APPLICATION_ID 拼（debug 变体带 .debug 后缀，写死包名会在运行时炸）"
   [ -f app/src/main/res/xml/file_paths.xml ] \
     || err "用了 FileProvider，但缺 app/src/main/res/xml/file_paths.xml"
 fi
 
-# 3.4 写公共下载目录必须按 SDK 版本分支（API 26~28 会 SecurityException）
+# 3.3 写公共下载目录必须按 SDK 版本分支（API 26~28 会 SecurityException）
 if grep -rq "setDestinationInExternalPublicDir" app/src/main/java; then
   grep -rq "Build.VERSION.SDK_INT" app/src/main/java/com/nhyzcms/clubapp/shell/DownloadStarter.kt \
     || err "setDestinationInExternalPublicDir 必须按 Build.VERSION.SDK_INT 分支（见 shell/DownloadPolicy）"
 fi
 
-# 3.5 密钥 / 本地配置不得入库
+# 3.4 密钥 / 本地配置不得入库
 for f in $(find . -name '*.jks' -o -name '*.keystore' -o -name 'local.properties' | grep -v '^\./\.git/'); do
   err "仓库里出现了密钥/本地配置类文件：$f"
 done
