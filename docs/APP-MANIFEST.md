@@ -67,6 +67,9 @@
 | `autoUpdateCheck` | `true` | 启动后是否检查 APK 更新 |
 | `externalLinkInBrowser` | `true` | 外部链接是否交系统浏览器（安全开，不建议关） |
 | `forceRefreshEntry` | `false` | 启动时强制重取入口 HTML（调试缓存问题用） |
+| `pullToRefresh` | `true` | 下拉刷新总开关（区块 4） |
+| `showBackToTop` | `true` | "返回顶部"浮动按钮（区块 4） |
+| `edgeToEdge` | `false` | 内容铺到状态栏下（区块 4；**默认关**，原因见 [chunks/CHUNK-04-REPORT.md](chunks/CHUNK-04-REPORT.md) §3.1） |
 
 开关键名一旦发布就不要改名，只能新增。
 
@@ -84,7 +87,10 @@
     "panorama": true,
     "autoUpdateCheck": true,
     "externalLinkInBrowser": true,
-    "forceRefreshEntry": false
+    "forceRefreshEntry": false,
+    "pullToRefresh": true,
+    "showBackToTop": true,
+    "edgeToEdge": false
   },
   "notice": {
     "id": "2026-10-open-day",
