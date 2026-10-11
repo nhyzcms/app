@@ -174,11 +174,27 @@ if [ -n "$(code_grep '\.proceed\(\)')" ]; then
   err "onReceivedSslError 里绝不能调 handler.proceed()（安全文档第 2 节：TLS 失败必须显式失败）"
 fi
 
-# 3.1 存储/媒体类权限一个都不要（安全文档第 2、7 节；区块 2 定调）
-if grep -nE '<uses-permission[^>]*(READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|READ_MEDIA_|MANAGE_EXTERNAL_STORAGE|ACCESS_MEDIA_LOCATION)' \
-     app/src/main/AndroidManifest.xml >/dev/null 2>&1; then
-  err "清单里出现了存储/媒体类权限：文件选择走系统 SAF、下载走 DownloadManager 即可，不需要它们（docs/SECURITY.md 第 2 节）"
-fi
+# 3.1 权限声明：读取媒体/外部存储一律禁止；写外部存储只允许指定 maxSdkVersion=28
+out=$(python3 - app/src/main/AndroidManifest.xml 2>&1 <<'PY'
+import re, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+problems = []
+for block in re.findall(r'<uses-permission\b[^>]*>', raw, re.S):
+    m = re.search(r'android:name="([^"]+)"', block)
+    short = m.group(1).rsplit(".", 1)[-1] if m else ""
+    if short in ("READ_EXTERNAL_STORAGE", "MANAGE_EXTERNAL_STORAGE", "ACCESS_MEDIA_LOCATION") \
+            or short.startswith("READ_MEDIA_"):
+        problems.append("禁止声明 " + short + "（文件选择走系统 SAF，不需要它）")
+    elif short == "WRITE_EXTERNAL_STORAGE":
+        max_sdk = re.search(r'android:maxSdkVersion="([^"]+)"', block)
+        if not max_sdk or max_sdk.group(1) != "28":
+            problems.append('WRITE_EXTERNAL_STORAGE 必须带 android:maxSdkVersion="28"'
+                            "（只在 Android 8/9 上把下载写进公共目录，高版本不得生效）")
+if problems:
+    sys.exit("；".join(problems))
+print("权限声明检查通过")
+PY
+) || err "AndroidManifest.xml：$out"
 
 # 3.2 FileProvider 三处必须一致（不一致时只有真机运行才会报 SecurityException）
 if grep -rq "getUriForFile" app/src/main/java; then
@@ -190,10 +206,12 @@ if grep -rq "getUriForFile" app/src/main/java; then
     || err "用了 FileProvider，但缺 app/src/main/res/xml/file_paths.xml"
 fi
 
-# 3.3 写公共下载目录必须按 SDK 版本分支（API 26~28 会 SecurityException）
+# 3.3 落盘位置必须统一由 DownloadPolicy 判定（写公共目录在 API ≤ 28 上需要写权限）
 if grep -rq "setDestinationInExternalPublicDir" app/src/main/java; then
-  grep -rq "Build.VERSION.SDK_INT" app/src/main/java/com/nhyzcms/clubapp/shell/DownloadStarter.kt \
-    || err "setDestinationInExternalPublicDir 必须按 Build.VERSION.SDK_INT 分支（见 shell/DownloadPolicy）"
+  grep -rq "DownloadPolicy.destination" app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt \
+    || err "落盘位置必须用 DownloadPolicy.destination() 统一判定，不要在下载器里写死"
+  grep -rq "Build.VERSION.SDK_INT" app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt \
+    || err "落盘位置必须按 Build.VERSION.SDK_INT 分支（Android 8/9 无写权限时 pub 目录会 SecurityException）"
 fi
 
 # 3.4 密钥 / 本地配置不得入库

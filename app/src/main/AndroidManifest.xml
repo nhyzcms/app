@@ -4,14 +4,20 @@
     <!--
       权限只声明必需的。区块 2 的结论：
         · 文件选择走系统 SAF（FileChooserParams.createIntent），不需要任何存储权限；
-        · 下载走 DownloadManager，Android 10 及以上写公共“下载”目录同样不需要权限；
+        · 下载走 DownloadManager：Android 10 及以上写公共“下载”目录不需要权限；
+          Android 8/9（API 26~28）需要写权限才能落公共目录（管理员 2026-10-11 确认），
+          因此下面的写权限用 maxSdkVersion="28" 限定，Android 10+ 的机器上不会生效；
+          权限被拒时壳会退回 App 目录，下载依旧可用；
         · 只有拍照需要 CAMERA：一旦在清单里声明它，系统就要求调用方自己持有，
           否则 ACTION_IMAGE_CAPTURE 会被拒，所以壳必须主动申请。
-      读写外部存储、读取媒体库类权限一个都不申请（见 docs/SECURITY.md 第 2 节）。
+      读取媒体库、读取外部存储类权限一个都不申请（见 docs/SECURITY.md 第 2 节）。
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <!-- 没有摄像头的设备（平板、部分模拟器）也要能安装 -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -70,9 +76,9 @@
         </activity>
 
         <!--
-          拍照输出的临时文件通过 FileProvider 交给相机 App（不申请存储权限）。
-          authorities 必须与 shell/CameraCapture.AUTHORITY 完全一致，否则 getUriForFile 会抛异常；
-          这里用 ${applicationId} 前缀，debug 变体（带 .debug 后缀）才不会被写死的包名坑到。
+          拍照输出与分享图片的临时文件通过 FileProvider 交给对方 App（不用存储权限）。
+          authorities 必须与 AppConfig.FILE_PROVIDER_AUTHORITY 一致（同一串），
+          否则 getUriForFile 会抛异常；用 ${applicationId} 前缀，debug 变体才不会被写死的包名坑到。
         -->
         <provider
             android:name="androidx.core.content.FileProvider"

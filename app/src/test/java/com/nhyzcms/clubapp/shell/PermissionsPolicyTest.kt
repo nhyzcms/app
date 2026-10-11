@@ -5,12 +5,26 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** [PermissionsPolicy] 的单测：只申请相机；拍照入口的判定规则。 */
+/** [PermissionsPolicy] 的单测：只申请必要权限；拍照/下载两个入口的判定规则。 */
 class PermissionsPolicyTest {
 
     @Test
-    fun 只申请相机一个权限() {
+    fun 拍照只申请相机一个权限() {
         assertEquals(listOf("android.permission.CAMERA"), PermissionsPolicy.capturePermissions())
+    }
+
+    @Test
+    fun 下载权限只在_android_8_9_上申请() {
+        assertEquals(
+            listOf("android.permission.WRITE_EXTERNAL_STORAGE"),
+            PermissionsPolicy.downloadPermissions(26),
+        )
+        assertEquals(
+            listOf("android.permission.WRITE_EXTERNAL_STORAGE"),
+            PermissionsPolicy.downloadPermissions(28),
+        )
+        assertEquals(emptyList<String>(), PermissionsPolicy.downloadPermissions(29))
+        assertEquals(emptyList<String>(), PermissionsPolicy.downloadPermissions(34))
     }
 
     @Test

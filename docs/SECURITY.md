@@ -10,9 +10,11 @@
 |---|---|---|---|
 | 会话 Cookie（等于是账号） | 中间人窃取；任意页面读取 | 全站 HTTPS + 禁止明文；TLS 错误直接失败；不用 `addJavascriptInterface`；仅白名单 Host 在壳内打开 | 设备已被 root / 恶意输入法 |
 | 密码与表单 | 同源页面外泄 | 仅加载本站 Origin；第三方 Cookie 关闭；无第三方 JS | 网站自身的 XSS（属网站仓库） |
-| 上传文件/图片 | 被其它 App 读取 | 文件选择用系统 SAF（不申请宽存储权限） | 保存到公共下载目录时会公开（仅下载时） |
+| 上传文件/图片 | 被其它 App 读取 | 文件选择用系统 SAF（不申请宽存储权限）；拍照输出走 FileProvider 缓存目录 | 用户主动保存到公共下载目录时会公开 |
+| 下载文件 | 落到公共目录被其它 App 读取 | 落盘目录由 `DownloadPolicy` 统一判定：API 29+ 免权限写公共「下载」目录；
+API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员 2026-10-11 确认）；被拒则退回 App 目录 | 权限在 Android 8/9 上被授予期间的通用写入能力 |
 | 更新包（APK） | 伪造包 → 任意代码执行 | sha256 校验 + **签名指纹必须与本机已装版本一致**；下载源限定本站与 GitHub Releases | 用户自行从其它渠道装包 |
-| 本地数据 | 备份导出、别沟读取 | `allowBackup=false` + `dataExtractionRules` 全排除；App 私有目录 | root 设备 |
+| 本地数据 | 备份导出、别沟通读取 | `allowBackup=false` + `dataExtractionRules` 全排除；App 私有目录 | root 设备 |
 | 调试接口 | 远程调试暴露 | WebView 远程调试仅 `BuildConfig.DEBUG` 开启 | debug 包泄露 |
 | 运维密钥（keystore、token） | 进入仓库 → 伪造发布 | `.gitignore` 屏蔽 `*.jks/*.keystore/keystore.properties`；keystore 只存 GitHub Secrets（base64） | Secrets 权限被拉走 |
 
@@ -33,7 +35,17 @@
 | 数据库/本地存储 | `true` | SPA 需要 localStorage（如 `cobalt:theme`） |
 | 安全浏览 | `setSafeBrowsingEnabled(true)`（API 26+） | 拦截恶意站点 |
 | 远程调试 | 仅 debug | 避免 release 被 adb 接入 |
-| 文件选择 | 仅系统 SAF / 相机 | 不申请 `READ/WRITE_EXTERNAL_STORAGE` |
+| 文件选择 | 仅系统 SAF / 相机 | 不申请读取媒体、读取外部存储类权限 |
+| 下载落盘 | API 29+ 写公共「下载」目录（免权限）；API 26~28 用 `WRITE_EXTERNAL_STORAGE`（**maxSdkVersion=28**）；被拒则退 App 目录 | 让 Android 8/9 用户也能在系统「下载」里找到文件，代价被限制在两个旧版本上 |
+
+### 2.1 权限清单（当前全部声明的权限）
+
+| 权限 | 用于 | 限制 |
+|---|---|---|
+| `INTERNET` | 加载站点与下载 | — |
+| `ACCESS_NETWORK_STATE` | 网络可用性判断/错误提示 | — |
+| `CAMERA` | 拍照上传 | 仅在“将要提供拍照入口”时申请；拒了退化为只能选文件 |
+| `WRITE_EXTERNAL_STORAGE` | Android 8/9 把下载写进公共「下载」目录 | **`maxSdkVersion=28`**，且仅在下载时申请；拒了退 App 目录 |
 
 > **为什么不做证书固定（Certificate Pinning）**：
 > 站点证书是 ZeroSSL DV，SAN 就是 IP `8.153.145.175`，**90 天必须换一次**。
@@ -66,6 +78,8 @@
 ❌ 禁止：`addJavascriptInterface` 暴露文件系统/数据库/任意 HTTP 接口
 ❌ 禁止：桥接方法里执行网页传来的任意字符串（不得 `eval`、不得拼接 shell、不得直接当文件路径用）
 
+> `scripts/preflight.sh` 已加规则：代码里出现 `addJavascriptInterface` 直接挂预检。
+
 ---
 
 ## 5. 密钥与签名
@@ -91,7 +105,7 @@
 | Cookie 属性 | 需网站确认 `SESSION_COOKIE_SECURE/HTTPONLY/SAMESITE` | 建议 `Secure=True, HttpOnly=True, SameSite=Lax` |
 | CSP | 无 | 可评估（注意不要打断 Marzipano/live2d） |
 | `X-Frame-Options` | `SAMEORIGIN` | 保持 |
-| `app-update/` 目录 | 待建 | 只读、无目录列表、无执行权限、只放 JSON 与 APK |
+| `app-update/` 目录 | 待建（区块 3） | 只读、无目录列表、无执行权限、只放 JSON 与 APK |
 | nginx `server_tokens` | `off` | 保持 |
 
 ---
@@ -101,9 +115,12 @@
 - [ ] 有没有新增在壳内打开的非本站域名？（必须交浏览器）
 - [ ] 有没有在 `onReceivedSslError` 里调 `handler.proceed()`？（绝对不能）
 - [ ] 有没有新增宽存储/通讯录/定位权限？能不用就不用
+- [ ] 若动了下载落盘：`WRITE_EXTERNAL_STORAGE` 是否仍带 `maxSdkVersion="28"`，且仅在下载时申请？（preflight 会拦）
 - [ ] 有没有新增 JS 桥接接口？是否限定 origin + 白名单？
 - [ ] 日志里有没有打印 URL 参数、Cookie、token、手机号？
 - [ ] 下载/安装路径是否校验了 `https` + `sha256` + 签名？
+- [ ] 上传/分享拿着会话的请求（下载、分享图片）是否都带了会话 Cookie？（不带会拿到 403 或登录页 HTML）
+- [ ] FileProvider 可共享目录有没有变多？（`res/xml/file_paths.xml` 每多一行都是一个对外可见路径）
 - [ ] 是否误提交了 `*.jks` / `local.properties` / `.env`？
 - [ ] Release 构建是否仍保持调试关闭（`BuildConfig.DEBUG` 分支）？
 

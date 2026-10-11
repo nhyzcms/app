@@ -1,7 +1,9 @@
 package com.nhyzcms.clubapp.shell
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** [DownloadPolicy] 的单测：落盘位置、文件名解析与清洗、可下载性判定。 */
@@ -9,14 +11,24 @@ class DownloadPolicyTest {
 
     @Test
     fun android_10_及以上不需要存储权限() {
-        assertEquals(DownloadPolicy.Destination.PUBLIC_DOWNLOADS, DownloadPolicy.of(29))
-        assertEquals(DownloadPolicy.Destination.PUBLIC_DOWNLOADS, DownloadPolicy.of(34))
+        assertEquals(DownloadPolicy.Destination.PUBLIC_DOWNLOADS, DownloadPolicy.destination(29, false))
+        assertEquals(DownloadPolicy.Destination.PUBLIC_DOWNLOADS, DownloadPolicy.destination(34, false))
+        assertFalse(DownloadPolicy.needsWritePermission(29))
+        assertFalse(DownloadPolicy.needsWritePermission(34))
     }
 
     @Test
-    fun android_8_9_降级到应用目录避免申请写权限() {
-        assertEquals(DownloadPolicy.Destination.APP_EXTERNAL_FILES, DownloadPolicy.of(26))
-        assertEquals(DownloadPolicy.Destination.APP_EXTERNAL_FILES, DownloadPolicy.of(28))
+    fun android_8_9_没授权时退回应用目录() {
+        assertEquals(DownloadPolicy.Destination.APP_EXTERNAL_FILES, DownloadPolicy.destination(26, false))
+        assertEquals(DownloadPolicy.Destination.APP_EXTERNAL_FILES, DownloadPolicy.destination(28, false))
+        assertTrue(DownloadPolicy.needsWritePermission(26))
+        assertTrue(DownloadPolicy.needsWritePermission(28))
+    }
+
+    @Test
+    fun android_8_9_授权后写公共下载目录() {
+        assertEquals(DownloadPolicy.Destination.PUBLIC_DOWNLOADS, DownloadPolicy.destination(26, true))
+        assertEquals(DownloadPolicy.Destination.PUBLIC_DOWNLOADS, DownloadPolicy.destination(28, true))
     }
 
     @Test

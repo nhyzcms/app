@@ -22,17 +22,23 @@
     <string name="toast_no_file_picker">设备上没有可用的文件选择器</string>
     <string name="toast_camera_denied">未授予相机权限，本次只能选择已有文件</string>
     <string name="toast_download_started">已开始下载，完成后可在通知栏打开</string>
-    <string name="toast_download_started_app_dir">已开始下载（本机系统较旧，文件存在应用目录，可从通知栏打开或分享）</string>
+    <string name="toast_download_started_app_dir">已开始下载（文件存在应用目录，可从通知栏打开或分享）</string>
+    <string name="toast_download_app_dir_fallback">未授予存储权限，文件改存到应用目录（可从通知栏打开）</string>
     <string name="toast_download_failed">无法开始下载，请稍后再试</string>
     <string name="toast_download_unsupported">该链接暂不支持下载（仅支持 https 直链）</string>
     <string name="toast_copied">已复制链接</string>
     <string name="toast_share_unavailable">没有可用的分享应用</string>
+    <string name="toast_share_preparing">正在准备图片…</string>
+    <string name="toast_share_image_too_large">图片太大，已改为分享链接</string>
+    <string name="toast_share_image_failed">图片准备失败，已改为分享链接</string>
 
     <!-- 长按菜单（图片 / 链接） -->
     <string name="dialog_image_actions">图片</string>
     <string name="dialog_link_actions">链接</string>
     <string name="dialog_share_link">分享链接</string>
+    <string name="dialog_share_image">分享图片</string>
     <string name="action_save_image">保存图片</string>
+    <string name="action_share_image">分享图片</string>
     <string name="action_share_link">分享链接</string>
     <string name="action_copy_link">复制链接</string>
 

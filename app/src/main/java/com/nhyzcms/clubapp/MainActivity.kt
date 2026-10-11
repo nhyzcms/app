@@ -35,6 +35,8 @@ import com.nhyzcms.clubapp.shell.DownloadPolicy
 import com.nhyzcms.clubapp.shell.DownloadStarter
 import com.nhyzcms.clubapp.shell.FileChooserHost
 import com.nhyzcms.clubapp.shell.LongPressPolicy
+import com.nhyzcms.clubapp.shell.MediaSharePolicy
+import com.nhyzcms.clubapp.shell.MediaSharer
 import com.nhyzcms.clubapp.shell.NavDecision
 import com.nhyzcms.clubapp.shell.NavPolicy
 import com.nhyzcms.clubapp.shell.PermissionsPolicy
@@ -52,8 +54,8 @@ import com.nhyzcms.clubapp.shell.WebShellClient
  *
  * 区块 2 新增的四条能力：
  *   ① input type=file 选择（含“拍照”入口）→ [FileChooserHost] + [CameraCapture]
- *   ② 下载落盘（带会话 Cookie）→ [DownloadStarter]
- *   ③ 长按图片/链接 → [LongPressPolicy] + 原生菜单
+ *   ② 下载落盘（带会话 Cookie）→ [DownloadStarter] + [DownloadPolicy]
+ *   ③ 长按图片/链接（保存/分享/复制/浏览器打开）→ [LongPressPolicy] + [MediaSharer]
  *   ④ 上传体积前置提示 → [UploadLimit]
  */
 class MainActivity : AppCompatActivity() {
@@ -70,20 +72,35 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraCapture: CameraCapture
     private lateinit var fileChooser: FileChooserHost
     private lateinit var downloads: DownloadStarter
+    private lateinit var mediaSharer: MediaSharer
 
     /** 等相机权限期间暂存的选择请求：权限弹窗会打断流程，必须先把回调记住。 */
     private var pendingChooser: PendingChooser? = null
 
+    /** 等存储权限期间暂存的下载请求（Android 8/9 才可能出现）。 */
+    private var pendingDownload: PendingDownload? = null
+
     /** 本进程内拒绝过相机权限：只影响本次会话，下次启动再给一次机会。 */
     private var cameraDeniedInSession = false
+
+    /** 本进程内拒绝过存储权限：不再反复弹窗，下载直接走 App 目录。 */
+    private var storageDeniedInSession = false
 
     private class PendingChooser(
         val callback: ValueCallback<Array<Uri>>,
         val params: WebChromeClient.FileChooserParams,
     )
 
+    private class PendingDownload(
+        val url: String,
+        val userAgent: String?,
+        val contentDisposition: String?,
+        val mimeType: String?,
+        val contentLength: Long,
+    )
+
     /** 长按菜单里的动作（用枚举，而不是拿显示文案去比较）。 */
-    private enum class LongPressAction { SAVE_IMAGE, SHARE_LINK, COPY_LINK, OPEN_BROWSER }
+    private enum class LongPressAction { SAVE_IMAGE, SHARE_IMAGE, SHARE_LINK, COPY_LINK, OPEN_BROWSER }
 
     /** 文件选择 / 拍照的结果统一回到 [handleChooserResult]。 */
     private val chooserLauncher: ActivityResultLauncher<Intent> =
@@ -104,6 +121,18 @@ class MainActivity : AppCompatActivity() {
             launchChooser(pending.callback, pending.params, includeCamera = granted)
         }
 
+    /** 存储权限（仅 Android 8/9 需要）：拒了也要把下载继续下去，只是换个目录。 */
+    private val storagePermissionLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val pending = pendingDownload ?: return@registerForActivityResult
+            pendingDownload = null
+            if (!granted) {
+                storageDeniedInSession = true
+                toast(R.string.toast_download_app_dir_fallback)
+            }
+            startDownloadNow(pending, writePermissionGranted = granted)
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -112,8 +141,10 @@ class MainActivity : AppCompatActivity() {
         cameraCapture = CameraCapture(this)
         fileChooser = FileChooserHost(cameraCapture)
         downloads = DownloadStarter(this)
-        // 上次拍完照没来得及清的临时文件在这里收尾（见 CameraCapture 注释）。
+        mediaSharer = MediaSharer(this)
+        // 上次拍完照/分享完没来得及清的临时文件在这里收尾。
         cameraCapture.cleanStaleFiles()
+        mediaSharer.cleanStaleFiles()
 
         // release 包关闭 WebView 远程调试（安全文档第 2 节）；debug 包保留 chrome://inspect 能力。
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
@@ -210,11 +241,11 @@ class MainActivity : AppCompatActivity() {
             val hit = webView.hitTestResult
             when (val target = LongPressPolicy.classify(hit.type, hit.extra)) {
                 is LongPressPolicy.Target.Image -> {
-                    showLongPressMenu(R.string.dialog_image_actions, target.url, withSaveImage = true)
+                    showLongPressMenu(R.string.dialog_image_actions, target.url, withImageItems = true)
                     true
                 }
                 is LongPressPolicy.Target.Link -> {
-                    showLongPressMenu(R.string.dialog_link_actions, target.url, withSaveImage = false)
+                    showLongPressMenu(R.string.dialog_link_actions, target.url, withImageItems = false)
                     true
                 }
                 LongPressPolicy.Target.None -> false
@@ -313,6 +344,15 @@ class MainActivity : AppCompatActivity() {
     private fun hasCameraPermission(): Boolean =
         ContextCompat.checkSelfPermission(this, PermissionsPolicy.CAMERA) == PackageManager.PERMISSION_GRANTED
 
+    /**
+     * 是否持有写外部存储权限。Android 10 及以上不需要这个权限，直接算作“有”
+     * （清单里那份声明也带了 maxSdkVersion=28，在高版本上根本不会生效）。
+     */
+    private fun hasWritePermission(): Boolean =
+        !DownloadPolicy.needsWritePermission(Build.VERSION.SDK_INT) ||
+            ContextCompat.checkSelfPermission(this, PermissionsPolicy.WRITE_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+
     /** 没有摄像头的设备不申请、也不给拍照入口。 */
     private fun hasCameraHardware(): Boolean =
         packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
@@ -353,26 +393,53 @@ class MainActivity : AppCompatActivity() {
             toast(R.string.toast_download_unsupported)
             return
         }
-        val id = downloads.start(
+        val request = PendingDownload(
             url = url,
             userAgent = userAgent?.takeIf { it.isNotBlank() } ?: webView.settings.userAgentString,
             contentDisposition = contentDisposition,
             mimeType = mimeType,
             contentLength = contentLength,
         )
+        // Android 8/9 要把文件写进公共“下载”目录得先拿写权限；本次已拒过就不再弹窗，
+        // 直接走 App 目录（下载本身不受影响，只是位置不同）。
+        if (!hasWritePermission() && !storageDeniedInSession) {
+            pendingDownload = request
+            storagePermissionLauncher.launch(PermissionsPolicy.WRITE_EXTERNAL_STORAGE)
+            return
+        }
+        startDownloadNow(request, writePermissionGranted = hasWritePermission())
+    }
+
+    private fun startDownloadNow(request: PendingDownload, writePermissionGranted: Boolean) {
+        val destination = DownloadPolicy.destination(Build.VERSION.SDK_INT, writePermissionGranted)
+        val id = downloads.start(
+            url = request.url,
+            userAgent = request.userAgent,
+            contentDisposition = request.contentDisposition,
+            mimeType = request.mimeType,
+            contentLength = request.contentLength,
+            destination = destination,
+        )
         if (id == null) {
             toast(R.string.toast_download_failed)
             return
         }
-        val toPublicDir = DownloadPolicy.of(Build.VERSION.SDK_INT) == DownloadPolicy.Destination.PUBLIC_DOWNLOADS
-        toast(if (toPublicDir) R.string.toast_download_started else R.string.toast_download_started_app_dir)
+        toast(
+            if (destination == DownloadPolicy.Destination.PUBLIC_DOWNLOADS) R.string.toast_download_started
+            else R.string.toast_download_started_app_dir,
+        )
     }
 
     // ── 长按菜单（区块 2）───────────────────────────────────────────────────
 
-    private fun showLongPressMenu(titleRes: Int, url: String, withSaveImage: Boolean) {
+    private fun showLongPressMenu(titleRes: Int, url: String, withImageItems: Boolean) {
         val actions = buildList {
-            if (withSaveImage && DownloadPolicy.rejectionOf(url) == null) add(LongPressAction.SAVE_IMAGE)
+            if (withImageItems) {
+                if (DownloadPolicy.rejectionOf(url) == null) add(LongPressAction.SAVE_IMAGE)
+                if (MediaSharePolicy.check(url, MediaSharePolicy.UNKNOWN_SIZE) == MediaSharePolicy.Verdict.Allowed) {
+                    add(LongPressAction.SHARE_IMAGE)
+                }
+            }
             add(LongPressAction.SHARE_LINK)
             add(LongPressAction.COPY_LINK)
             add(LongPressAction.OPEN_BROWSER)
@@ -386,6 +453,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun labelOf(action: LongPressAction): Int = when (action) {
         LongPressAction.SAVE_IMAGE -> R.string.action_save_image
+        LongPressAction.SHARE_IMAGE -> R.string.action_share_image
         LongPressAction.SHARE_LINK -> R.string.action_share_link
         LongPressAction.COPY_LINK -> R.string.action_copy_link
         LongPressAction.OPEN_BROWSER -> R.string.action_open_browser
@@ -396,9 +464,35 @@ class MainActivity : AppCompatActivity() {
             LongPressAction.SAVE_IMAGE ->
                 startDownload(url, webView.settings.userAgentString, null, "image/*", -1L)
 
+            LongPressAction.SHARE_IMAGE -> shareImage(url)
             LongPressAction.SHARE_LINK -> shareText(url)
             LongPressAction.COPY_LINK -> copyToClipboard(url)
             LongPressAction.OPEN_BROWSER -> openExternally(url)
+        }
+    }
+
+    /**
+     * 分享图片文件本体：先下到缓存再交给系统分享（见 [MediaSharer]）。
+     * 失败/过大/地址不支持时自动退化成“分享链接”——不让用户两手空空。
+     */
+    private fun shareImage(url: String) {
+        if (MediaSharePolicy.check(url, MediaSharePolicy.UNKNOWN_SIZE) != MediaSharePolicy.Verdict.Allowed) {
+            shareText(url)
+            return
+        }
+        toast(R.string.toast_share_preparing)
+        mediaSharer.share(url, webView.settings.userAgentString) { result ->
+            when (result) {
+                MediaSharer.Result.Success -> Unit
+                MediaSharer.Result.TooLarge -> {
+                    toast(R.string.toast_share_image_too_large)
+                    shareText(url)
+                }
+                MediaSharer.Result.Failed -> {
+                    toast(R.string.toast_share_image_failed)
+                    shareText(url)
+                }
+            }
         }
     }
 
@@ -522,9 +616,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        // 未完成的选择请求必须在销毁前释放，否则网页那个 input 会一直卡着。
+        // 未完成的请求必须在销毁前释放，否则网页那边会一直卡着。
         // （abort 会顺带清掉拍照的临时文件）
         pendingChooser = null
+        pendingDownload = null
         fileChooser.abort()
 
         // WebView 不主动销毁会泄露 Activity。
