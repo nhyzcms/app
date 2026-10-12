@@ -25,7 +25,9 @@ import kotlin.concurrent.thread
  *  1. **配置拉不到不能让 App 不可用**：任何一环失败都只是"这次不更新"，不弹错误面板；
  *  2. **提示只在主线程弹**：网络与摘要计算都在后台线程；
  *  3. 冷启动后延迟几秒才检查（不抢首屏带宽——服务器只有 3 M）；
- *  4. 回到前台时按 30 分钟节流检查（见 docs/UPDATE-STRATEGY.md §3）。
+ *  4. 回到前台时按 30 分钟节流检查（见 docs/UPDATE-STRATEGY.md §3）；
+ *  5. **线程红线**：WebView 只能在主线程访问，UA 一律在主线程取（见 [userAgentOnMainThread]）。
+ *     ❗ 违反这条曾经直接导致"一进 App 就闪退"（2026-10-12），详见 docs/FIX-20261012-STARTUP-CRASH.md。
  */
 class UpdateController(
     private val activity: AppCompatActivity,
@@ -35,11 +37,12 @@ class UpdateController(
 
     private val store = UpdateStore(activity)
 
-    private val fetcher: ManifestFetcher by lazy {
-        ManifestFetcher(userAgentProvider(), AppConfig.UPDATE_ALLOWED_HOSTS)
-    }
+    /**
+     * 下载器只在主线程被构造/使用（cleanStaleFiles、beginDownload、dispose 全在主线程），
+     * 但仍然统一走 [userAgentOnMainThread]：UA 的取法只有这一个入口，便于一眼查清调用点。
+     */
     private val downloader: ApkDownloader by lazy {
-        ApkDownloader(activity, userAgentProvider(), AppConfig.UPDATE_ALLOWED_HOSTS)
+        ApkDownloader(activity, userAgentOnMainThread(), AppConfig.UPDATE_ALLOWED_HOSTS)
     }
     private val installer = UpdateInstaller(activity)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -106,8 +109,14 @@ class UpdateController(
         checking = true
         if (manual) toast(R.string.update_checking)
 
+        // ⚠️ UA 必须在**本线程（主线程）**先取好，再带进后台线程（见 [userAgentOnMainThread]）。
+        // 修 2026-10-12 启动闪退：以前这里放的是 `fetcher` 的 lazy 初始化，它会在后台线程里
+        // 调 userAgentProvider() → 后台线程访问 webView.settings → WebView 直接抛异常 → 进程被杀。
+        val userAgent = userAgentOnMainThread()
+
         thread(name = "clubapp-update-check") {
-            val text = fetcher.fetch(AppConfig.UPDATE_MANIFEST_URL)
+            val text = ManifestFetcher(userAgent, AppConfig.UPDATE_ALLOWED_HOSTS)
+                .fetch(AppConfig.UPDATE_MANIFEST_URL)
             val manifest = UpdateManifestCodec.parse(text)
             val decision = if (manifest == null) {
                 UpdatePolicy.Decision.None
@@ -340,6 +349,27 @@ class UpdateController(
     }
 
     // ── 小工具 ──────────────────────────────────────────────────────────────
+
+    /**
+     * 取 WebView 的 UA —— **只能在主线程调用**。
+     *
+     * 为什么必须单独拎出来：WebView 的所有方法都只能在创建它的线程（主线程）调用。
+     * AOSP `WebView.getSettings()` 内部会 `checkThread()`，而
+     * `sEnforceThreadChecking = targetSdkVersion >= Build.VERSION_CODES.JELLY_BEAN_MR2`
+     * （本工程 targetSdk = 34）→ 命中即**直接抛 RuntimeException**；该异常发生在后台线程、
+     * 没有任何人接住 → 进程被杀 → 用户看到的就是"点进 App 一秒就闪退"，且每次必现。
+     *
+     * 因此所有需要 UA 的地方都必须经过这里；万一将来有人在后台线程调用，
+     * 这里让本次请求退回"不带 App UA 标记"（站点最多把这次请求当普通浏览器），
+     * 而不是把整个 App 拖死。
+     */
+    private fun userAgentOnMainThread(): String? {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Log.w(TAG, "userAgentProvider 只能在主线程调用，本次跳过（不带 App UA 标记）")
+            return null
+        }
+        return runCatching { userAgentProvider() }.getOrNull()
+    }
 
     private fun autoUpdateEnabled(): Boolean =
         UpdatePolicy.flag(store.flags(), FLAG_AUTO_UPDATE_CHECK, true)

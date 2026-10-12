@@ -101,4 +101,11 @@
     <!-- 无障碍 -->
     <string name="cd_webview">网站内容</string>
     <string name="cd_progress">加载进度</string>
+
+    <!-- 崩溃自记录（见 shell/CrashReporter）：上次运行留下的报告，下次启动时弹出来 -->
+    <string name="crash_report_title">上次运行崩了</string>
+    <string name="action_crash_copy">复制日志</string>
+    <string name="action_crash_share">分享日志</string>
+    <string name="dialog_crash_share">分享崩溃日志</string>
+    <string name="toast_crash_copied">崩溃日志已复制，可粘贴发给管理员</string>
 </resources>

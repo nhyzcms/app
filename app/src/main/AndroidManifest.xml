@@ -38,6 +38,12 @@
         </intent>
     </queries>
 
+    <!--
+      android:name=".ClubApp"：Application 里只装一件事——崩溃自记录（见 shell/CrashReporter）：
+      未捕获异常先落盘，下次启动时弹出来，用户点一下就能复制/分享堆栈。
+      为什么需要：用户手机上既没有 adb 也读不到 logcat，2026-10-12 的启动闪退因此只能靠读代码反推
+      （见 docs/FIX-20261012-STARTUP-CRASH.md）。
+    -->
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -46,6 +52,7 @@
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:name=".ClubApp"
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
