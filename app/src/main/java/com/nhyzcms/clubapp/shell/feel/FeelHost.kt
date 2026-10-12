@@ -1,12 +1,23 @@
 package com.nhyzcms.clubapp.shell.feel
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebView
+import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
@@ -21,8 +32,8 @@ import com.nhyzcms.clubapp.shell.update.UpdatePolicy
  * 「原生手感」宿主（区块 4）：窗口配色、下拉刷新、首屏骨架、返回顶部按钮、返回键判定、
  * 网页状态探测的接线都收在这里，MainActivity 只留调用点。
  *
- * 安全边界：本类执行的两段 JS 都是固定常量脚本（[PageStateProbe.PROBE_SCRIPT] 与
- * [SCROLL_TO_TOP_SCRIPT]），不拼接变量，也不用 addJavascriptInterface（SECURITY 第 4.1 节）。
+ * 安全边界：本类执行的 JS 都是固定常量脚本（[PageStateProbe.PROBE_SCRIPT]、[ContentProbe.SCRIPT]
+ * 与 [SCROLL_TO_TOP_SCRIPT]），不拼接变量，也不用 addJavascriptInterface（SECURITY 第 4.1 节）。
  */
 class FeelHost(
     private val activity: AppCompatActivity,
@@ -43,6 +54,15 @@ class FeelHost(
         private set
 
     private val probe = PageStateProbe(webView, ::onProbe)
+
+    /** 首屏看护：定时探测"网页画出内容了吗"，见 [startRevealWatch] 与 [ContentProbe]。 */
+    private val revealHandler = Handler(Looper.getMainLooper())
+    private var revealDeadlineMs = 0L
+    private var lastSnapshot: ContentProbe.Snapshot? = null
+    private var diagView: TextView? = null
+
+    /** 每次显示骨架屏自增：让"动画兜底收起"任务失效，避免它误收掉新一次的骨架屏。 */
+    private var skeletonToken = 0
     private var lastExitConfirmAtMs = 0L
     private var refreshStartedAtMs = 0L
     private var systemBarsBottomPx = 0
@@ -96,13 +116,29 @@ class FeelHost(
     /** 销毁：停掉探测，避免 Handler 继续持有即将销毁的 WebView。 */
     fun dispose() {
         probe.stop()
+        revealHandler.removeCallbacksAndMessages(null)
+        diagView = null
     }
 
-    /** 冷启动首屏：先显示骨架，等网页画出来再淡出（消除白屏那一闪）。 */
+    /**
+     * 冷启动首屏：显示骨架浮层，等网页**画出内容**就淡出（消除白屏那一闪）。
+     *
+     * ⚠️ 这里**不再**动 WebView 的可见性与 alpha —— 这是 2026-10-12 黑屏事故的修复点：
+     *   ① 把 WebView 设成 INVISIBLE、再对它的 alpha 做动画，会让它被放到硬件层上；
+     *      WebView 走自己的绘制通道，部分 ROM 在这之后就一直画不出内容；
+     *   ② 更要命的是"何时揭开"原先只押在 `onPageFinished` 上，而它要等网页的 `load` 事件
+     *      —— **所有子资源**（含大图、live2d 模型）都加载完才触发。本站只有 3 M 上行，
+     *      这个事件迟迟不来 → 骨架屏一直盖着网页 → 用户看到的"一片黑"（骨架屏是深色资源色），
+     *      同时 pageLoaded 一直为 false → 下拉刷新被判"不可用" → "下拉后没反应"。
+     * 现在：骨架屏只是盖在上面的浮层，是否揭开由 [startRevealWatch] 主动探测决定。
+     */
     fun showSkeleton() {
         pageLoaded = false
-        webView.visibility = View.INVISIBLE
+        skeletonToken++
+        skeleton.animate().cancel()
+        skeleton.alpha = 1f
         skeleton.visibility = View.VISIBLE
+        startRevealWatch()
     }
 
     /** onPageFinished：收尾刷新圈、骨架与按钮状态。 */
@@ -202,16 +238,118 @@ class FeelHost(
         }
     }
 
+    /**
+     * 收起骨架浮层。只淡出**骨架**，绝不碰 WebView 的 alpha 与可见性（原因见 [showSkeleton]）。
+     *
+     * 除了动画结束回调，还挂了一个"兜底收起"：动画被取消/打断时也必须收掉浮层，
+     * 否则它就会一直盖在网页上 —— 那正是本次黑屏的表现。
+     */
     private fun hideSkeleton() {
         if (skeleton.visibility != View.VISIBLE) return
-        webView.visibility = View.VISIBLE
-        webView.alpha = 0f
-        webView.animate().alpha(1f).setDuration(FADE_MS).start()
+        revealHandler.removeCallbacks(revealTick)
+        val token = ++skeletonToken
+        skeleton.animate().cancel()
         skeleton.animate().alpha(0f).setDuration(FADE_MS).withEndAction {
-            skeleton.visibility = View.GONE
-            skeleton.alpha = 1f
+            if (token == skeletonToken) {
+                skeleton.visibility = View.GONE
+                skeleton.alpha = 1f
+            }
         }.start()
+        revealHandler.postDelayed({
+            if (token == skeletonToken) {
+                skeleton.animate().cancel()
+                skeleton.alpha = 1f
+                skeleton.visibility = View.GONE
+            }
+        }, FADE_MS + 200L)
     }
+
+    // ── 首屏看护：骨架屏该不该揭开 / 空白页诊断 ───────────────────────────────
+
+    /**
+     * 定时问网页"画出内容了吗"：画出来了就**立刻**揭开骨架（并让下拉刷新/返回顶部可用），
+     * 到点还没画出来就强制揭开 + 给出诊断浮层 —— 绝不让用户一直盯着黑屏。
+     */
+    private val revealTick = object : Runnable {
+        override fun run() {
+            if (pageLoaded || skeleton.visibility != View.VISIBLE) return
+            probeContent()
+            if (pageLoaded || skeleton.visibility != View.VISIBLE) return
+            revealHandler.postDelayed(this, REVEAL_INTERVAL_MS)
+        }
+    }
+
+    private fun startRevealWatch() {
+        revealHandler.removeCallbacks(revealTick)
+        revealDeadlineMs = SystemClock.elapsedRealtime() + REVEAL_TIMEOUT_MS
+        revealHandler.postDelayed(revealTick, REVEAL_INTERVAL_MS)
+    }
+
+    /** 探测一次网页内容。判据见 [ContentProbe.looksUnrendered]。 */
+    private fun probeContent() {
+        runCatching {
+            webView.evaluateJavascript(ContentProbe.SCRIPT) { value ->
+                val snapshot = ContentProbe.parse(value)
+                lastSnapshot = snapshot
+                if (snapshot != null && !ContentProbe.looksUnrendered(snapshot)) {
+                    // 这里**不等 onPageFinished**：load 事件常被大图/模型拖住，等它就会一直黑屏。
+                    pageLoaded = true
+                    hideSkeleton()
+                } else if (skeleton.visibility == View.VISIBLE &&
+                    SystemClock.elapsedRealtime() >= revealDeadlineMs
+                ) {
+                    hideSkeleton()
+                    showContentDiagnostics(lastSnapshot)
+                }
+            }
+        }
+    }
+
+    /**
+     * 到点仍然没有内容：把诊断信息摊在屏幕上（点一下复制）。
+     *
+     * 为什么必须有它：用户端只有一台手机 —— 读不到 logcat（无 READ_LOGS）、也用不了 adb，
+     * 所以"一张截图 + 一段可复制的诊断文本"就是我们唯一的线索。
+     */
+    private fun showContentDiagnostics(snapshot: ContentProbe.Snapshot?) {
+        if (diagView != null) return
+        val parent = rootView as? ViewGroup ?: return
+        val detail = ContentProbe.diagnose(
+            snapshot = snapshot,
+            url = runCatching { webView.url }.getOrNull().orEmpty(),
+            javaScriptEnabled = runCatching { webView.settings.javaScriptEnabled }.getOrDefault(false),
+            webViewVersion = webViewVersion(),
+        )
+        val view = TextView(activity).apply {
+            typeface = Typeface.MONOSPACE
+            textSize = 11f
+            setTextColor(DIAG_TEXT_COLOR)
+            setBackgroundColor(DIAG_BACKGROUND_COLOR)
+            setPadding(baseMarginPx / 2, baseMarginPx / 2, baseMarginPx / 2, baseMarginPx / 2)
+            text = activity.getString(R.string.diag_blank_hint) + "\n\n" + detail
+            setOnClickListener {
+                runCatching {
+                    val clipboard =
+                        activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("diag", detail))
+                    Toast.makeText(activity, R.string.toast_diag_copied, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        parent.addView(
+            view,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM,
+            ),
+        )
+        diagView = view
+    }
+
+    /** 当前 WebView 内核版本（诊断用）。静态方法、不碰实例，任何线程都安全。 */
+    private fun webViewVersion(): String =
+        runCatching { WebView.getCurrentWebViewPackage()?.versionName.orEmpty() }.getOrDefault("")
 
     /** 滚回顶部（固定常量脚本，不拼接变量，见 SECURITY 第 4.1 节）。 */
     private fun scrollToTop() {
@@ -231,6 +369,14 @@ class FeelHost(
     private companion object {
         /** 骨架淡出 / 按钮淡入时长（毫秒）。短一点更跟手，长了像卡顿。 */
         const val FADE_MS = 160L
+
+        /** 首屏看护：探测间隔，以及"多久还没内容"就强制揭开并举诊断。 */
+        const val REVEAL_INTERVAL_MS = 1_500L
+        const val REVEAL_TIMEOUT_MS = 15_000L
+
+        /** 诊断浮层配色：琥珀字 + 半透明深底（盖在网页上也看得清）。 */
+        val DIAG_TEXT_COLOR = 0xFFFFE08A.toInt()
+        val DIAG_BACKGROUND_COLOR = 0xE6101820.toInt()
 
         /** 浮层（返回顶部按钮）的基础外边距（dp）。 */
         const val OVERLAY_MARGIN_DP = 16
