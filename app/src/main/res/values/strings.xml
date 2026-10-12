@@ -108,4 +108,8 @@
     <string name="action_crash_share">分享日志</string>
     <string name="dialog_crash_share">分享崩溃日志</string>
     <string name="toast_crash_copied">崩溃日志已复制，可粘贴发给管理员</string>
+
+    <!-- 空白页诊断（见 shell/feel/ContentProbe）：网页迟迟画不出内容时出现在屏幕底部，点一下复制 -->
+    <string name="diag_blank_hint">页面没能显示出来。点这里复制诊断信息，发给管理员。</string>
+    <string name="toast_diag_copied">诊断信息已复制</string>
 </resources>
