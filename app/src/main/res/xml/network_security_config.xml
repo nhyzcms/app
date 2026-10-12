@@ -2,7 +2,9 @@
 <!--
   网络安全基线（安全文档 docs/SECURITY.md §2）：
     1) 禁止明文流量（cleartext）——站点已全量 HTTPS + HSTS；
-    2) 只信任系统根证书（不信任 user），防止设备上被装入的根证书进行流量劫持。
+    2) 只信任系统根证书（不信任 user），防止设备上被装入的根证书进行流量劫持；
+       例外：站点证书链的根「Sectigo Public Server Authentication Root R46」作为
+       额外锚点打进 App（见下面 base-config 里的注释与 docs/FIX-20261012-CERT-R46.md）。
 
   有意不做证书固定（pinning）：站点是 ZeroSSL DV 证书、SAN 为 IP、90 天必须换发，
   固定指纹或中间 CA 都会在换证当天让全量用户失联。见 ARCHITECTURE ADR-A03。
@@ -11,6 +13,14 @@
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
+            <!--
+              站点证书链的根（Sectigo Public Server Authentication Root R46，2021-03-22 至 2046-03-21）。
+              为什么额外打进 App：实测老设备的系统信任库里没有这个根
+              （HUAWEI P40 Pro+ / HarmonyOS 4.2 = Android 12 内核），握手会直接失败并报
+              “Trust anchor for certification path not found”，表现为 WebView 连文档都建不起来
+              （App 里就是白屏/黑屏）。只增加信任、不替换系统根；站点换 CA 时要同步维护它。
+            -->
+            <certificates src="@raw/sectigo_r46" />
         </trust-anchors>
     </base-config>
 
@@ -26,6 +36,9 @@
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />
+            <!-- ⚠️ debug-overrides 会**替换** base-config 的信任锚，debug 包必须在这里也写一遍，
+                 否则 debug 包依旧打不开站点（用户实际装的就是 debug 包）。 -->
+            <certificates src="@raw/sectigo_r46" />
         </trust-anchors>
     </debug-overrides>
 </network-security-config>
