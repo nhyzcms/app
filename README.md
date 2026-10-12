@@ -55,6 +55,7 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
     │   ├── AndroidManifest.xml
     │   ├── java/com/nhyzcms/clubapp/
     │   │   ├── MainActivity.kt          入口：装载 WebView、错误面板、能力接线
+    │   │   ├── ClubApp.kt               Application：只装「崩溃自记录」（见 shell/CrashReporter.kt）
     │   │   └── shell/
     │   │       ├── AppConfig.kt             站点地址、UA 标记、Host 白名单、FileProvider authority
     │   │       ├── NavPolicy.kt             导航裁决（纯函数，可单测）
@@ -70,6 +71,8 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
     │   │       ├── LongPressPolicy.kt       长按命中判定（图片 / 链接）
     │   │       ├── MediaSharePolicy.kt      分享图片的前置判定（纯函数）
     │   │       ├── MediaSharer.kt           分享图片文件本体（缓存 → FileProvider → ACTION_SEND）
+    │   │       ├── CrashText.kt             崩溃报告文本排版（纯函数，可单测）
+    │   │       ├── CrashReporter.kt         崩溃自记录：未捕获异常落盘 + 下次启动弹窗（可复制/分享）
     │   │       ├── feel/                    区块 4：原生手感（启动页/配色/骨架/下拉刷新/返回顶部）
     │   │       │   ├── PageTheme.kt             网页主题色 → 壳配色（纯函数）
     │   │       │   ├── BackExitPolicy.kt        返回键决策：双击才退出（纯函数）
@@ -78,6 +81,7 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
     │   │       │   ├── EdgeToEdgePolicy.kt      铺满开关与浮层让位（纯函数）
     │   │       │   ├── ScrollAwareWebView.kt    同步上报滚动位置的 WebView
     │   │       │   ├── PageStateProbe.kt        每 2 s 读网页主题色/滚动位置（固定脚本）
+    │   │       │   ├── ContentProbe.kt          网页「画出内容了吗」探测（纯函数；决定骨架揭开与空白诊断）
     │   │       │   └── FeelHost.kt              把上述能力接到窗口与视图的宿主
     │   │       └── update/                  区块 3：三级更新（L0 热 / L1 清单 / L2 自升级）
     │   │           ├── MiniJson.kt              零依赖 JSON 解析（可单测）
@@ -148,6 +152,10 @@ gradle :app:testDebugUnitTest
 
 - 仅 HTTPS，明文流量全站禁止（`cleartextTrafficPermitted=false`）；
 - **不做证书固定**：站点证书是 90 天 ZeroSSL DV，固定必然在换证日砖掉；改为「HTTPS 强制 + 系统信任链 + TLS 失败明确报错」；
+- **唯一的信任链例外**：站点证书链的根（`Sectigo Public Server Authentication Root R46`，2021 年新建）
+  不在老设备的系统信任库里（实测 HUAWEI P40 Pro+ / HarmonyOS 4.2 = Android 12 内核会直接握手失败），
+  因此把它作为**额外信任锚**打进 App（`res/raw/sectigo_r46.pem`，同时写进 `base-config` 与 `debug-overrides`）；
+  **站点换 CA 时必须同步维护**，见 [docs/FIX-20261012-CERT-R46.md](docs/FIX-20261012-CERT-R46.md)；
 - 不信任用户安装的 CA（关闭 user trust anchors），防中间人；
 - 站内导航白名单 = 本站 host；其它域名一律交给系统浏览器，未知 scheme 一律拦截；
 - **权限只有 5 个**（完整清单见 SECURITY.md §2.1）：
@@ -159,7 +167,8 @@ gradle :app:testDebugUnitTest
     壳不绕过也不静默安装）；
 - 所有带会话的请求（`DownloadManager`、分享图片）**必须手动带 Cookie**；
 - 更新包必须**校验 sha256 + 签名一致**才允许安装；安装来源链接只允许本站 / GitHub Releases；
-- 壳内执行 JS 只允许**固定常量脚本**（区块 4：读主题色、滚回顶部），禁止拼接变量，也不用 JS 桥接（见 SECURITY.md §4.1）；
+- 壳内执行 JS 只允许**固定常量脚本**（区块 4：读主题色、滚回顶部、探测网页内容），
+  禁止拼接变量，也不用 JS 桥接（见 SECURITY.md §4.1）；
 - 密钥永不入库：keystore 只存在于 GitHub Secrets（base64）；
 - Release 构建关闭 WebView 远程调试（`BuildConfig.DEBUG` 才开）。
 
@@ -167,18 +176,26 @@ gradle :app:testDebugUnitTest
 
 | 区块 | 内容 | 状态 |
 |---|---|---|
-| 1 | 整体骨架：可编译的最小壳 + 文档 + CI | ✅ 已完成（[报告](docs/chunks/CHUNK-01-REPORT.md)） |
-| 2 | 全部功能能力：文件上传/下载、相机、权限、长按保存、分享 | ✅ 代码完成（[报告](docs/chunks/CHUNK-02-REPORT.md)）；🟡 待真机验收 |
-| 3 | 三级更新机制（manifest + APK 自升级） | 🟡 代码完成 + 清单端点已部署（2026-10-11）（[报告](docs/chunks/CHUNK-03-REPORT.md)）；待真机验收 |
-| 4 | 原生手感：沉浸式配色、启动页、骨架屏、下拉刷新、手势返回、返回顶部 | 🟡 代码完成（[报告](docs/chunks/CHUNK-04-REPORT.md)）；待真机验收 |
+| 1 | 整体骨架：可编译的最小壳 + 文档 + CI | ✅ 已完成，真机验收通过 2026-10-12（[报告](docs/chunks/CHUNK-01-REPORT.md)） |
+| 2 | 全部功能能力：文件上传/下载、相机、权限、长按保存、分享 | ✅ 已完成，真机验收通过 2026-10-12（[报告](docs/chunks/CHUNK-02-REPORT.md)） |
+| 3 | 三级更新机制（manifest + APK 自升级） | ✅ 已完成（代码 + 清单端点已部署 2026-10-11 + 真机验收通过 2026-10-12）（[报告](docs/chunks/CHUNK-03-REPORT.md)） |
+| 4 | 原生手感：沉浸式配色、启动页、骨架屏、下拉刷新、手势返回、返回顶部 | ✅ 已完成，真机验收通过 2026-10-12（[报告](docs/chunks/CHUNK-04-REPORT.md)） |
 | 5 | 站内消息与角标（实时/通知） | ⏳ |
-| 6 | 弱网与性能（3M 带宽适配、缓存、预加载） | ⏳ |
+| 6 | 弱网与性能（3M 带宽适配、缓存、预加载） | ⏳（已挂入 2026-10-12 反馈的卡顿 / 诊断浮层去误报 / 不加载 live2d，见 ROADMAP） |
 | 7 | 签名与首个 Release 发布 | ⏳ |
-| 8 | 网站侧配套（App 模式 UI 覆盖全部功能 + manifest 端点） | ⏳ |
+| 8 | 网站侧配套（App 模式 UI 覆盖全部功能 + manifest 端点） | ⏳（已挂入网站侧不注入 live2d + 大图懒加载，见 ROADMAP） |
 | 9 | 测试与验收（手测清单 / 回归流程 / E2E） | ⏳ |
 | 10 | 长期维护手册与交接 | ⏳ |
 
 分块依据与验收标准见 [`docs/ROADMAP.md`](docs/ROADMAP.md)，功能台账见 [`docs/FEATURE-MATRIX.md`](docs/FEATURE-MATRIX.md)。
+
+> **2026-10-12 真机联调**：首次真机安装暴露了三起底层故障（启动闪退 / 黑白屏 / 证书链的根不在老设备信任库），
+> 已由 PR #10~#13 修复；区块 1~4 随后由管理员在真机上**全部验收通过**（M1「可用」达成）。
+> 故障报告见 [FIX-20261012-STARTUP-CRASH.md](docs/FIX-20261012-STARTUP-CRASH.md)、
+> [FIX-20261012-BLANK-SCREEN.md](docs/FIX-20261012-BLANK-SCREEN.md)、
+> [FIX-20261012-BLANK-SCREEN-2.md](docs/FIX-20261012-BLANK-SCREEN-2.md)、
+> [FIX-20261012-CERT-R46.md](docs/FIX-20261012-CERT-R46.md)；
+> 遗留项（卡顿 / 诊断浮层去误报 / App 不加载 live2d）已并入区块 6 / 8 的开发计划。
 
 ## 8. 维护者 30 分钟上手
 
@@ -203,6 +220,10 @@ gradle :app:testDebugUnitTest
 | [chunks/CHUNK-02-REPORT.md](docs/chunks/CHUNK-02-REPORT.md) | 区块 2（文件/拍照/下载/长按/分享）交付说明 |
 | [chunks/CHUNK-03-REPORT.md](docs/chunks/CHUNK-03-REPORT.md) | 区块 3（三级更新）交付说明与服务器配置步骤 |
 | [chunks/CHUNK-04-REPORT.md](docs/chunks/CHUNK-04-REPORT.md) | 区块 4（原生手感）交付说明与真机验收清单 |
+| [FIX-20261012-STARTUP-CRASH.md](docs/FIX-20261012-STARTUP-CRASH.md) | 故障报告：启动闪退（后台线程访问 WebView） |
+| [FIX-20261012-BLANK-SCREEN.md](docs/FIX-20261012-BLANK-SCREEN.md) | 故障报告：黑/白屏（骨架浮层永不揭开） |
+| [FIX-20261012-BLANK-SCREEN-2.md](docs/FIX-20261012-BLANK-SCREEN-2.md) | 故障报告：硬看门狗 + 壳侧网络探测 + 诊断浮层 |
+| [FIX-20261012-CERT-R46.md](docs/FIX-20261012-CERT-R46.md) | 故障报告：证书链的根不在老设备信任库 |
 | [deploy/app-update/README.md](deploy/app-update/README.md) | 更新分发目录的部署与发版操作 |
 
 ---
