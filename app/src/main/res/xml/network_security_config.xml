@@ -14,7 +14,7 @@
         <trust-anchors>
             <certificates src="system" />
             <!--
-              站点证书链的根（Sectigo Public Server Authentication Root R46，有效期到 2035）。
+              站点证书链的根（Sectigo Public Server Authentication Root R46，2021-03-22 至 2046-03-21）。
               为什么额外打进 App：实测老设备的系统信任库里没有这个根
               （HUAWEI P40 Pro+ / HarmonyOS 4.2 = Android 12 内核），握手会直接失败并报
               “Trust anchor for certification path not found”，表现为 WebView 连文档都建不起来
