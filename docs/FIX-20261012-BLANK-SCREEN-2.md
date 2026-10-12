@@ -1,5 +1,10 @@
 # 排查：进 App 后空白（2026-10-12 第二起 · 第二轮）
 
+> ⚠️ **结论更正（第三轮）**：本轮推测的"没给联网权限"**不成立**。第三轮的诊断浮层给出了真因：
+> `SSLHandshakeException: Trust anchor for certification path not found` ——
+> 服务器证书链的根（`Sectigo Public Server Authentication Root R46`）不在老设备的信任库里。
+> 见 `FIX-20261012-CERT-R46.md`。本轮加装的"硬看门狗 + 壳侧 HTTP 探测 + 诊断浮层"正是最终破案的手段。
+>
 > 承接 `FIX-20261012-BLANK-SCREEN.md`。首轮修复（PR #11）解决了"骨架浮层永不揭开"，
 > 但真机上**画面依旧空白**，且**等了 15 秒也没有出现诊断浮层**。
 
@@ -19,8 +24,8 @@
 两条路都依赖 `evaluateJavascript` 的回调 —— 如果 WebView 里**根本没有文档**
 （请求没发出去 / 一直挂着），回调永远不回来，于是既不会揭开、也不会诊断。
 
-最可能的原因是**这台手机没有给这个 App 联网权限**（HarmonyOS/EMUI 的"应用联网"管控，
-侧载 App 尤其常见），其次是网络层被拦（挂起而非立刻报错，所以连 `onReceivedError` 也没有）。
+（当时的推测是"没给联网权限"，第三轮已证明是 TLS 信任问题——握手失败同样会让 WebView 里
+没有文档、也没有 `onReceivedError`。）
 
 ## 2. 本轮改动（`shell/feel/FeelHost.kt`）
 
