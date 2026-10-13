@@ -18,7 +18,7 @@
 | 设备分级与低内存降级 | `shell/perf/DeviceClass.kt`（纯逻辑）：`isLowRamDevice` / `memoryClass` / 可用存储 → 两档；低内存档探测更慢、内存缓存更愿意清、存储阈值更保守 |
 | 缓存清理时机（不重复下载） | `shell/perf/CacheTrimPolicy.kt`（纯逻辑）+ `PerfHost`：**默认什么都不做**，只在"空间告急 / 低于档位阈值 / 超过 30 天"时清磁盘缓存；内存缓存只在系统报告内存压力时清（`clearCache(false)`，不动 Cookie） |
 | 轨迹落盘复用 | `shell/DiagLog.kt`（从 FeelHost 抽出的公共件，PerfHost 共用） |
-| 静态预检 | `scripts/preflight-perf.sh`（9 组规则，含"跨包引用必须显式 import"，由 `preflight-feel.sh` 连带执行 → **CI 工作流无需改**） |
+| 静态预检 | `scripts/preflight-perf.sh`（**10 组规则**，含"跨包引用必须显式 import"与"属性初始化不得自引用"，由 `preflight-feel.sh` 连带执行 → **CI 工作流无需改**） |
 | 单测 | 5 个测试文件、**47 个新用例**（合计 236 个用例全绿） |
 
 **新增依赖：0**；**新增权限：0**（`ACCESS_NETWORK_STATE` 区块 1 起就在）。
@@ -91,23 +91,48 @@
 | `bash scripts/preflight-feel.sh`（含连带 perf / push 预检） | ✅ 全绿 |
 | `/workspace/ktcheck.py`（括号/字符串/注释配平） | ✅ 81 个文件通过 |
 | 本地 JDK + kotlinc + JUnit4 真实编译并跑单测 | ✅ **236 个用例全通过**（区块 5 基线 189，本块 +47） |
-| `scripts/preflight-perf.sh` 反向注入 | ✅ **9/9 全部拦住**（见下） |
+| `scripts/preflight-perf.sh` 反向注入 | ✅ **10/10 全部拦住**（见下） |
+| 本 PR 的 CI（`Debug APK`） | ✅ **success**（含预检 + 单测 + `assembleDebug`） |
 
 ### 4.1 反向注入（证明规则不是摆设）
 
 拦截器做网络 I/O · 去掉主文档判定 · 在拦截器里写死站点路径 · 拦截应答改 302 ·
 在 FeelHost 里清缓存 · 把探测下限改小 · 去掉诊断撤销轮询 · 开关没进 DEFAULT_FLAGS ·
-跨包引用漏 import —— 逐条注入，9/9 被拦住。
+跨包引用漏 import · 属性初始化块自引用 —— 逐条注入，10/10 被拦住。
 其中两条第一版规则**没拦住**（主文档判定被 `shouldOverrideUrlLoading` 里的同名判断蒙混、
 302 检测撞上 grep 不跨行），已改成结构化判定（解析函数体 / 逐行看状态码）后重测通过。
 
-### 4.2 两个大文件的推送通道（临时）
+### 4.2 两个大文件的推送通道（临时，已删除）
 
 `FeelHost.kt`（24.8k 字符）与 `MainActivity.kt`（30.0k 字符）超出写入通道的单次载荷上限，
-本块用**临时通道**落地：6 个 `git` 补丁分片 + 一次性工作流
-（`.github/workflows/temp-assemble-chunk06.yml`）应用补丁并**用 sha256 校验**后提交。
+本块用**临时通道**落地：`git` 补丁分片 + 一次性工作流应用补丁，**用 sha256 校验**后提交。
 校验：远端文件与本地逐字一致（`387ae704…` / `d1f82fb9…`），全部既往推送文件亦逐个 `cmp` 一致。
-**该工作流与 `.github/parts/` 是临时的，合并后删除。**
+修 CI 报的编译错误时又用了一次同一通道（见 4.3）。
+**该工作流与 `.github/parts/` 已在分支上全部删除**，分支最终内容只剩正常代码与文档。
+
+### 4.3 CI 首次跑红：一处只有真编译器能发现的错误（已修，并固化成规则）
+
+第一次推完 CI 就在 `:app:compileDebugKotlin` 报：
+
+```text
+FeelHost.kt:285:61 Type checking has run into a recursive problem.
+```
+
+原因：`clearPoll` 这个属性是 `object : Runnable`，而它自己的初始化块里
+（进到内层 `probeContent { }` lambda 之后）又引用了 `clearPoll` —— Kotlin 无法据此推断属性类型。
+修法：进 lambda 前先取一个**带显式类型**的局部引用，再用它：
+
+```kotlin
+val self: Runnable = this
+revealHandler.postDelayed(self, next)
+```
+
+两点教训已固化：
+
+1. 新增预检第 **10** 组规则「属性初始化块里不得引用属性自身」（反向注入验证能拦住）；
+2. 这类错误**本地编译不出来**（`FeelHost.kt` 依赖 androidx/R 类，本地无 Android SDK），
+   本块的做法是先用 kotlinc 写一个最小 stub **复现同一个报错**、确认修法能编译，再走通道推上去 ——
+   stub 复现 + 修复后编译通过，与 CI 结果（`Debug APK` success）一致。
 
 ---
 
@@ -130,9 +155,9 @@
 
 ## 6. 需要你注意
 
-1. **临时文件**：本块还留了 `.github/workflows/temp-assemble-chunk06.yml` 与
-   `.github/parts/chunk06-*.patch` —— 它们是把两个大文件写进来的临时通道，**合并前/后都应删除**
-   （内容已落到 `FeellHost.kt` / `MainActivity.kt`，删掉不影响构建）。
+1. **临时通道已清理**：本块曾用 `.github/workflows/temp-assemble-chunk06.yml` 与
+   `.github/parts/chunk06-*.patch` 把两个大文件写进仓库；**它们已在分支上删除**，
+   分支最终内容只有正常代码与文档（`git ls-tree .github` 只剩 `workflows/android.yml`）。
 2. **证书**：站点证书 **2026-11-26 到期**（ZeroSSL DV）。换证/换链时同步复核
    App 侧 `network_security_config` 的信任锚（区块 1~4 的 R46 额外锚）。
 3. **文档同步的客观限制**：`docs/ROADMAP.md`（8.7k 字符）与 `docs/ARCHITECTURE.md`（8.0k）
@@ -157,10 +182,10 @@
 - **交付物**（实际落地）：首屏看护去误报（`RenderWatchPolicy` + 独立撤销轮询）、
   状态探测按需退避（`ProbeCadence`）、Live2D 素材壳侧兜底拦截（`blockLive2dAssets` 默认开）、
   设备分级与低内存降级（`DeviceClassifier`）、缓存清理时机（`CacheTrimPolicy`，默认不动长缓存）、
-  专项预检 `scripts/preflight-perf.sh`（9 组规则）。
+  专项预检 `scripts/preflight-perf.sh`（10 组规则）。
 - **未做（2026-10-13 与管理员确认）**：首屏关键资源预取（实测瓶颈是图片而非 JS，且与 L0 热更新冲突）、
   仅 WiFi 下载大资源（蜂窝下拦全景图会破图）、远程开关快照 —— 均改为交给网站侧（区块 8）。
-- **状态**：代码/单测（236 用例）/静态预检（反向注入 9/9）完成；纯 app 仓库改动；
+- **状态**：代码/单测（236 用例）/静态预检（反向注入 10/10）/CI（Debug APK）均通过；纯 app 仓库改动；
   待管理员真机验收（见 CHUNK-06 报告第 5 节的 10 条）。
 ```
 
