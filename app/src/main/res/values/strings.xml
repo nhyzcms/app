@@ -120,4 +120,11 @@
     <string name="notif_dm">你有 %1$d 条未读私信，点击查看</string>
     <string name="notif_notice">你有 %1$d 条未读通知，点击查看</string>
     <string name="notif_mixed">%1$d 条未读私信、%2$d 条未读通知，点击查看</string>
+
+    <!-- 区块 5 诊断：debug 包一次性自检通知（验证通知能否送达本机；独立渠道、不驱动角标） -->
+    <string name="selftest_channel_name">推送自检（调试）</string>
+    <string name="selftest_channel_desc">仅调试包使用：验证通知能否送达本机</string>
+    <string name="selftest_title">推送自检</string>
+    <string name="selftest_text">看到这条说明通知可用。若没看到，说明系统把通知拦了——请到「设置 → 通知」里允许本应用通知。</string>
+    <string name="selftest_diag_title">推送状态（调试）</string>
 </resources>
