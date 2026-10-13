@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 区块 6（弱网与性能）专项静态预检 —— 只需 bash + grep。
+# 区块 6（弱网与性能）专项静态预检 —— 只需 bash + grep/python3。
 #
 # 为什么独立成脚本：见 scripts/preflight-feel.sh 末尾的"连带执行"约定 ——
 # CI 只显式调用 preflight.sh 与 preflight-feel.sh，新脚本命名为 preflight-*.sh 就会被跑到。
@@ -12,7 +12,9 @@
 #   ⑤ clearCache 只能出现在两个被审过的位置，且必须走 CacheTrimPolicy 的时机判定；
 #   ⑥ 探测间隔不得低于 1500 ms（降频不能被改回去）；
 #   ⑦ 举诊断必须配撤销轮询（否则又会出现"浮层一直挂着"的误报）；
-#   ⑧ 新开关键名必须同时写进代码与文档。
+#   ⑧ 新开关键名必须同时写进代码与文档；
+#   ⑨ 跨包引用必须显式 import；
+#   ⑩ 属性初始化块里不得引用属性自身（Kotlin 类型推断递归，只有 CI 能发现）。
 #
 # 用法： bash scripts/preflight-perf.sh
 set -uo pipefail
@@ -212,8 +214,45 @@ for path in sorted(pathlib.Path("app/src/main/java").rglob("*.kt")):
         failed = True
 sys.exit(1 if failed else 0)
 PY
-else
-  echo "[预检-perf][提示] 没有 python3，跳过跨包引用 import 检查"
+fi
+
+# ── 10. 属性初始化块里不得引用属性自身（区块 6 实测的编译错误）──────────────────
+#    Kotlin 会报 "Type checking has run into a recursive problem"；
+#    本地没有 Android SDK 编译不了 FeelHost.kt，只有 CI 能发现 —— 所以钉成静态规则。
+#    ✓ 正确写法：进 lambda 前先取带显式类型的局部引用（val self: Runnable = this），再用 self。
+if command -v python3 >/dev/null 2>&1; then
+  python3 - <<'PY' || fail=1
+import pathlib
+import re
+import sys
+
+failed = False
+pattern = re.compile(
+    r"^\s*(?:private\s+|internal\s+)?val\s+(\w+)\s*(?::\s*[\w<>,. ]+)?=\s*(?:object\s*:|Runnable\s*\{)"
+)
+for path in sorted(pathlib.Path("app/src/main/java").rglob("*.kt")):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for index, line in enumerate(lines):
+        hit = pattern.match(line)
+        if not hit:
+            continue
+        name = hit.group(1)
+        brace = line.find("{", line.find("="))
+        if brace < 0:
+            continue
+        depth = 0
+        for offset in range(index, min(index + 400, len(lines))):
+            segment = lines[offset][brace:] if offset == index else lines[offset]
+            depth += segment.count("{") - segment.count("}")
+            if offset > index and re.search(r"\b" + re.escape(name) + r"\b", lines[offset]):
+                print(f"[预检-perf][失败] {path}:{offset + 1} 属性 `{name}` 的初始化块内引用了它自己：")
+                print("             请先 `val self: Runnable = this`，再在 lambda 里用 self（Kotlin 类型推断会递归）")
+                failed = True
+                break
+            if offset > index and depth <= 0:
+                break
+sys.exit(1 if failed else 0)
+PY
 fi
 
 if [ "$fail" -eq 0 ]; then
