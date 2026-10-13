@@ -51,6 +51,7 @@ import com.nhyzcms.clubapp.shell.WebShellClient
 import com.nhyzcms.clubapp.shell.feel.BackExitPolicy
 import com.nhyzcms.clubapp.shell.feel.FeelHost
 import com.nhyzcms.clubapp.shell.feel.ScrollAwareWebView
+import com.nhyzcms.clubapp.shell.perf.PerfHost
 import com.nhyzcms.clubapp.shell.update.UpdateController
 import com.nhyzcms.clubapp.shell.update.UpdatePolicy
 
@@ -75,6 +76,11 @@ import com.nhyzcms.clubapp.shell.update.UpdatePolicy
  *   ③ 下拉刷新（只在网页顶部生效）→ SwipeRefreshLayout + [ScrollAwareWebView]
  *   ④ 返回顶部浮动按钮（清单开关 showBackToTop）
  *   ⑤ 返回手势：预测式返回 + 双击才退出 → [BackExitPolicy]
+ *
+ * 区块 6 新增的弱网与性能（接线集中在 [PerfHost] 与 [FeelHost]）：
+ *   ① 大资源兜底拦截（Live2D 素材 ~60 MB）→ [PerfHost.interceptHeavyAsset]
+ *   ② 设备分级：低内存/存储紧张 → 探测放缓、内存缓存该清就清
+ *   ③ 缓存清理时机（只在空间紧张或太久没清时动，别把长缓存白扔）
  */
 class MainActivity : AppCompatActivity() {
 
@@ -119,6 +125,12 @@ class MainActivity : AppCompatActivity() {
      * 逻辑都在 [FeelHost] 里，本类只保留调用点。
      */
     private lateinit var feel: FeelHost
+
+    /**
+     * 区块 6：弱网与性能宿主（设备分级 / 大资源拦截 / 缓存清理时机）。
+     * 逻辑都在 [PerfHost] 里，本类只保留调用点。
+     */
+    private lateinit var perf: PerfHost
 
     private class PendingChooser(
         val callback: ValueCallback<Array<Uri>>,
@@ -181,6 +193,9 @@ class MainActivity : AppCompatActivity() {
         mediaSharer = MediaSharer(this)
         // 更新协调器（区块 3）。UA 用 lambda 延迟取，等下面 configureWebView 配好再请求。
         updates = UpdateController(this) { webView.settings.userAgentString }
+        // 区块 6：弱网与性能（设备分级 / 大资源拦截 / 缓存清理时机）。
+        // 必须在 feel 之前建：FeelHost 要按设备档位决定探测节奏。
+        perf = PerfHost(this, webView, flags = { updates.flags() })
         // 区块 4：原生手感接线（窗口配色、下拉刷新、骨架、返回顶部、返回键判定）
         feel = FeelHost(
             activity = this,
@@ -192,6 +207,7 @@ class MainActivity : AppCompatActivity() {
             errorPanel = errorPanel,
             flags = { updates.flags() },
             reload = { webView.reload() },
+            perfProfile = { perf.profile },
         )
         // 上次拍完照/分享完没来得及清的临时文件在这里收尾。
         cameraCapture.cleanStaleFiles()
@@ -226,6 +242,8 @@ class MainActivity : AppCompatActivity() {
         // 更新包残留清理 + 冷启动后延迟几秒检查（不抢首屏带宽：服务器只有 3 M）
         updates.cleanStaleFiles()
         updates.onShellReady()
+        // 区块 6：缓存维护（绝大多数启动什么都不做：长缓存是弱网下"不重复下载"的依靠）
+        perf.scheduleCacheMaintenance()
     }
 
     // ── 初始化 ────────────────────────────────────────────────────────────────
@@ -292,6 +310,9 @@ class MainActivity : AppCompatActivity() {
             externalLinkInBrowser = {
                 UpdatePolicy.flag(updates.flags(), "externalLinkInBrowser", true)
             },
+            // 区块 6：大资源闸门（Live2D 素材兜底拦截）。注意它在**后台线程**被调用，
+            // 实现里不许碰 WebView / 不许网络 I/O（见 PerfHost.interceptHeavyAsset 的注释）。
+            resourceGate = { request -> perf.interceptHeavyAsset(request) },
         )
 
         webView.webChromeClient = WebShellChromeClient(
@@ -713,6 +734,16 @@ class MainActivity : AppCompatActivity() {
         feel.onPause()
         webView.onPause()
         super.onPause()
+    }
+
+    /**
+     * 区块 6：系统内存压力 → 按设备档位清 WebView 的**内存**缓存（不动磁盘、不动 Cookie）。
+     * 判定与节流都在 shell/perf 里（[PerfHost.onTrimMemory] / CacheTrimPolicy）。
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        // 系统可能在极早期（甚至 onCreate 之前）回调，此时宿主还没建好。
+        if (::perf.isInitialized) perf.onTrimMemory(level)
     }
 
     override fun onDestroy() {
