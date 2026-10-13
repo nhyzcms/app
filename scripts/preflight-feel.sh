@@ -41,13 +41,25 @@ if grep -q '@style/Theme_ClubApp_Splash' app/src/main/AndroidManifest.xml; then
     || err "缺 app/src/main/res/drawable/splash_background.xml"
 fi
 
-# ── 3. 下拉刷新：必须声明「网页已上滚时不响应下拉」 ────────────────────────
+# ── 3. 下拉刷新：必须声明「网页已上滚时不响应下拉」 ────────────────────
 if grep -q 'SwipeRefreshLayout' app/src/main/res/layout/activity_main.xml; then
   grep -rq 'setOnChildScrollUpCallback' app/src/main/java/com/nhyzcms/clubapp \
     || err "用了 SwipeRefreshLayout 就必须设 setOnChildScrollUpCallback，否则网页中部下滑会误触发刷新"
   grep -q 'ScrollAwareWebView' app/src/main/res/layout/activity_main.xml \
     || err "下拉刷新必须搭配 ScrollAwareWebView，它提供同步的滚动位置供手势判断"
 fi
+
+# ── 4. 连带执行同目录其它区块的专项预检 ────────────────────────────
+#    为什么这么做：CI 工作流只显式调用了 preflight.sh 与 preflight-feel.sh，
+#    每新增一个区块就去改一次 .github/workflows/android.yml（还是大文件整文件推送）
+#    既啰嗦又容易漏。改成“以本脚本为入口，自动带上同目录其它专项脚本”，
+#    新脚本只要命名为 scripts/preflight-*.sh 就会被 CI 跑到。
+for extra in scripts/preflight-*.sh; do
+  [ "$(basename "$extra")" = "preflight-feel.sh" ] && continue
+  [ -f "$extra" ] || continue
+  echo "--- 连带预检：$extra ---"
+  bash "$extra" || fail=1
+done
 
 if [ "$fail" -eq 0 ]; then
   echo "[预检-feel] 全部通过 ✅"
