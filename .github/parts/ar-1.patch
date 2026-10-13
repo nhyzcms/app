@@ -1,0 +1,59 @@
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 51f30ed..f1a79f2 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -59,6 +59,11 @@
+ | **A08** | 单 Activity + 单 WebView，不引入导航框架 | 站点是 HashRouter SPA，路由全在网页内；原生只需一个宿主 Activity。不引入 Compose Navigation / Fragment 堆栈。 |
+ | **A09** | 沉浸式：**默认不铺满状态栏**，只做“配色沉浸” | Android WebView 的 `env(safe-area-inset-*)` 只反映屏幕缺口（display cutout）、通常为 0，铺满会让网页 sticky 顶栏被状态栏压住。因此铺满做成清单开关 `edgeToEdge`（默认 false）；默认改为让状态栏 / 导航栏 / 窗口底色跟随网页 `meta theme-color`（`shell/feel/PageTheme`）。见 [chunks/CHUNK-04-REPORT.md](chunks/CHUNK-04-REPORT.md) §3.1。 |
+ | **A10** | 壳内执行 JS：只允许**固定常量脚本** | 探测网页主题色 / 滚动位置与“返回顶部”需要执行 JS；一旦拼接变量就成了注入口子。禁止 `addJavascriptInterface`、禁止 `evaluateJavascript` 字符串拼接、禁止 `loadUrl("javascript:…")`（`scripts/preflight.sh` 已固化）。 |
++| **A11** | 推送（区块 5）只在前台保活，角标由「固定 id 的静音通知」驱动 | 后台常驻连接需要前台服务（常驻通知 + 耗电 + 国内 ROM 清理），与 3 M 带宽 / 2 G 内存 / 学生手机的约束不划算。Android 8+ 没有「设置数字角标」的公开 API，launcher 数字来自活动通知，故用一条 `IMPORTANCE_LOW` + `setShowBadge(true)` + `setNumber(未读数)` 的通知驱动。见 [chunks/CHUNK-05-REPORT.md](chunks/CHUNK-05-REPORT.md) 2.1。 |
++| **A12** | 壳自建原生 WebSocket（区块 5），而非读网页 DOM / 走 WebMessage 桥 | 与网站仓库零耦合、不依赖网页选择器、不引入 `addWebMessageListener`（老设备会降级）；代价是自写帧与握手（已用 74 个单测钉死）。实测 `dm` 事件自带 `conversation_id`，连「点通知直达会话」也无需网站侧配合。见 [PUSH-CONTRACT.md](PUSH-CONTRACT.md)。 |
++| **A13** | 首屏看护（区块 6）「多次复核 + 独立撤销」，不再一次定生死 | 原实现只复核一次、且撤销点（`onPageFinished`）已过期 → 慢速首屏必现「诊断浮层一直挂着」。改为连续两次空白且到点才列诊断、浮层出现后按 2/4/8/15/30 s 轮询撤销。见 [chunks/CHUNK-06-REPORT.md](chunks/CHUNK-06-REPORT.md) 2.1。 |
++| **A14** | 网页状态探测（区块 6）按需退避（2 s → 15 s，有变化回快档） | 滚动与手势的主信息源是 `ScrollAwareWebView.onScrollChanged`（同步、零开销），探测只用于配色与兜底补正 → 退避不损手感，省电并少与渲染抢主线程。见 [chunks/CHUNK-06-REPORT.md](chunks/CHUNK-06-REPORT.md) 2.2。 |
++| **A15** | 大资源（区块 6）只在壳侧**兜底**拦截，正解留在网站侧 | 实测网站已按视口宽度不挂载看板娘（App UA 零 live2d 请求），壳侧拦截仅防「网站改规则 / 视口偏大」；拦截返回空体 200、**主文档永不拦**、白名单唯一真源在 `AppConfig.BLOCKED_ASSET_PREFIXES`，可远程关。见 [chunks/CHUNK-06-REPORT.md](chunks/CHUNK-06-REPORT.md) 2.3。 |
+ 
+ ---
+ 
+@@ -72,6 +77,9 @@
+ | `shell/WebShellChromeClient.kt` | 进度回调、控制台日志（仅 debug）、（区块 2）文件选择器、（区块 4）全屏视频 | — |
+ | `update/*`（区块 3） | 拉取 `app-manifest.json`、版本对比、下载与校验、调用安装器 | 决定"是否强制更新"（由 manifest 声明） |
+ | `shell/feel/*`（区块 4） | 原生手感：主题色探测与解析（`PageTheme` / `PageStateProbe`）、滚动感知 WebView、下拉刷新 / 返回顶部 / 返回键的纯逻辑策略，以及把它们接线到窗口的 `FeelHost` | 网页内容与路由（仍属 Web 层）；不做 JS 桥接 |
++| `shell/push/*`（区块 5） | 前台 WSS 长连接（帧 / 握手 / 心跳 / 退避重连）、未读角标与静音通知、未读计数校准、点通知深链到会话、前后台生命周期接线 | 后台保活与真推送（明确不做）；网页内的徽标（网页自理） |
++| `shell/perf/*`（区块 6） | 设备分级、大资源兜底拦截（`shouldInterceptRequest` 白名单）、WebView 缓存清理时机与内存压力响应 | 网页侧的图片懒加载/缩略图（属网站仓库）；资源预取（明确不做） |
++| `shell/DiagLog.kt`（区块 6） | 运行轨迹落盘（`filesDir/diag/last-run.txt`，容量封顶） | 任何上报（本应用不采集设备标识） |
+ | `bridge/*`（按需） | 向网页暴露版本号、`openExternal`、`share`、`toast` 等白名单方法 | 任何文件系统/隐私数据的宽接口 |
+ 
+ ---
+@@ -117,11 +125,11 @@ App 在默认 UA 后附加： `NhyzClubApp/<versionName> (Android; <versionCode>
+ | 上传体积上限 | nginx `client_max_body_size 20M` | 上传前先在本地提示，避免传到一半 413 |
+ | 上传协议 | `tus-resumable: 1.0.0`（drf-tus） | 必须提供文件选择器（`onShowFileChooser`），否则传不了 |
+ | 全景图 | Marzipano + WebGL，解码瓦片为 `preview` + 分层 JPEG | 必须开启硬件加速；低端机回落提示 |
+-| Live2D 素材 | 静态 resources 约 60 MB | 不建议移动端自动加载，走 manifest 开关关闭 |
+-| 实时消息 | Channels/WebSocket | 前台保持连接；后台不保活（区块 5 再评） |
++| Live2D 素材 | 静态 resources 约 60 MB | 网站侧按视口宽度（≤1024 px）不挂载看板娘；壳侧再**兜底拦截** `/static/live2d/`（区块 6，开关 `blockLive2dAssets`）—— 实测 App UA 零请求 |
++| 实时消息 | Channels/WebSocket | 前台保持连接；后台不保活（区块 5 已实现，契约见 [PUSH-CONTRACT.md](PUSH-CONTRACT.md)） |
+ | 静态缓存 | 带 contenthash 的资源 1y immutable | WebView 缓存策略直接受益，不需要额外做本地包 |
+ | 无 Service Worker | 已确认仓库无 SW | 离线兜底由壳提供（原生错误页 + 重试） |
+-| 网页主题 | `meta[name=theme-color]` 随主题改写（浅 `#ffffff` / 深 `#080f17`） | 壳每 2 s 读一次并同步状态栏 / 导航栏 / 窗口底色（区块 4） |
++| 网页主题 | `meta[name=theme-color]` 随主题改写（浅 `#ffffff` / 深 `#080f17`） | 壳按需探测并同步状态栏 / 导航栏 / 窗口底色（区块 4；间隔区块 6 起由 `ProbeCadence` 在稳定后退避 2 s → 15 s） |
+ | `viewport-fit=cover` + `env(safe-area-inset-top)` | 站点已写，但 **Android WebView 里该值为 0** | 不铺满状态栏（ADR-A09）；做真 edge-to-edge 需区块 8 配合注入安全区高度 |
+ 
+ ---
+@@ -135,7 +143,7 @@ icon → 启动页（Theme_ClubApp_Splash；API 31+ 走系统 SplashScreen API
+   → restoreState(savedInstanceState) 存在？→ 恢复（不重载、不显示骨架）
+   → 否则：显示首屏骨架 → load START_URL（/#/m 或 manifest 指定的起始路由）
+   → onPageStarted: 显示顶部进度条
+-  → onPageFinished: 隐藏进度条/骨架（错误时切错误面板）→ 开始每 2 s 一次的主题/滚动探测
++  → onPageFinished: 隐藏进度条/骨架（错误时切错误面板）→ 开始主题/滚动探测（2 s 起，稳定后由 ProbeCadence 退避到 15 s）
+ ```
+ 
+ ### 6.2 导航裁决（`shouldOverrideUrlLoading`）
+@@ -170,7 +178,7 @@ onReceivedSslError → handler.cancel() → 原生错误面板
+ 每次页面渲染（onPageFinished）
+   → 收刷新圈 / 淡出骨架 / 刷新「返回顶部」按钮状态
+   → 立刻读一次网页主题色（不等轮询周期）
+-前台每 2 s（PageStateProbe，仅可见时）
++前台按需（PageStateProbe，仅可见时；间隔由 ProbeCadence 退避 2 s → 15 s，有变化立刻回 2 s）
+   → 读 meta theme-color 与 window.pageYOffset（固定常量脚本）
+   → 配色变了 → 同步状态栏 / 导航栏 / 窗口底色 + 图标明暗
+   → 滚动位置 → 兜底校正下拉刷新判断与「返回顶部」按钮
