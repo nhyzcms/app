@@ -1,0 +1,41 @@
+diff --git a/app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt b/app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt
+index b835872..7bd1bfd 100644
+--- a/app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt
++++ b/app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt
+@@ -181,6 +193,9 @@ class MainActivity : AppCompatActivity() {
+         mediaSharer = MediaSharer(this)
+         // 更新协调器（区块 3）。UA 用 lambda 延迟取，等下面 configureWebView 配好再请求。
+         updates = UpdateController(this) { webView.settings.userAgentString }
++        // 区块 6：弱网与性能（设备分级 / 大资源拦截 / 缓存清理时机）。
++        // 必须在 feel 之前建：FeelHost 要按设备档位决定探测节奏。
++        perf = PerfHost(this, webView, flags = { updates.flags() })
+         // 区块 4：原生手感接线（窗口配色、下拉刷新、骨架、返回顶部、返回键判定）
+         feel = FeelHost(
+             activity = this,
+@@ -192,6 +207,7 @@ class MainActivity : AppCompatActivity() {
+             errorPanel = errorPanel,
+             flags = { updates.flags() },
+             reload = { webView.reload() },
++            perfProfile = { perf.profile },
+         )
+         // 上次拍完照/分享完没来得及清的临时文件在这里收尾。
+         cameraCapture.cleanStaleFiles()
+@@ -226,6 +242,8 @@ class MainActivity : AppCompatActivity() {
+         // 更新包残留清理 + 冷启动后延迟几秒检查（不抢首屏带宽：服务器只有 3 M）
+         updates.cleanStaleFiles()
+         updates.onShellReady()
++        // 区块 6：缓存维护（绝大多数启动什么都不做：长缓存是弱网下"不重复下载"的依靠）
++        perf.scheduleCacheMaintenance()
+     }
+ 
+     // ── 初始化 ────────────────────────────────────────────────────────────────
+@@ -292,6 +310,9 @@ class MainActivity : AppCompatActivity() {
+             externalLinkInBrowser = {
+                 UpdatePolicy.flag(updates.flags(), "externalLinkInBrowser", true)
+             },
++            // 区块 6：大资源闸门（Live2D 素材兜底拦截）。注意它在**后台线程**被调用，
++            // 实现里不许碰 WebView / 不许网络 I/O（见 PerfHost.interceptHeavyAsset 的注释）。
++            resourceGate = { request -> perf.interceptHeavyAsset(request) },
+         )
+ 
+         webView.webChromeClient = WebShellChromeClient(
