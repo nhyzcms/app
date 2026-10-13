@@ -1,0 +1,21 @@
+diff --git a/app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt b/app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt
+index b835872..7bd1bfd 100644
+--- a/app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt
++++ b/app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt
+@@ -715,6 +736,16 @@ class MainActivity : AppCompatActivity() {
+         super.onPause()
+     }
+ 
++    /**
++     * 区块 6：系统内存压力 → 按设备档位清 WebView 的**内存**缓存（不动磁盘、不动 Cookie）。
++     * 判定与节流都在 shell/perf 里（[PerfHost.onTrimMemory] / CacheTrimPolicy）。
++     */
++    override fun onTrimMemory(level: Int) {
++        super.onTrimMemory(level)
++        // 系统可能在极早期（甚至 onCreate 之前）回调，此时宿主还没建好。
++        if (::perf.isInitialized) perf.onTrimMemory(level)
++    }
++
+     override fun onDestroy() {
+         // 未完成的请求必须在销毁前释放，否则网页那边会一直卡着。
+         // （abort 会顺带清掉拍照的临时文件）
