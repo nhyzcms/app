@@ -1,0 +1,198 @@
+diff --git a/app/src/main/java/com/nhyzcms/clubapp/shell/feel/FeelHost.kt b/app/src/main/java/com/nhyzcms/clubapp/shell/feel/FeelHost.kt
+index d929a11..8900ca9 100644
+--- a/app/src/main/java/com/nhyzcms/clubapp/shell/feel/FeelHost.kt
++++ b/app/src/main/java/com/nhyzcms/clubapp/shell/feel/FeelHost.kt
+@@ -159,42 +194,120 @@ class FeelHost(
+         record("showSkeleton：已显示骨架浮层，等待首屏内容（" + HARD_DEADLINE_MS + "ms 后强制揭开）")
+     }
+ 
+-    /** 纯计时兜底（见 [showSkeleton] 的说明）。 */
++    /**
++     * 纯计时兜底（见 [showSkeleton] 的说明）：到点**先探测再下结论**。
++     *
++     * 区块 6 之前这里是无条件 `reportBlank()`：慢速首屏（大图还在下、React 还没挂载）
++     * 会被判成故障并弹诊断浮层 —— 正是本块要修掉的误报。现在只有"确实没画出内容"
++     * 才列诊断；画出来了（只是 `load` 事件被大图拖住）就正常揭开。
++     */
+     private val hardWatchdog = Runnable {
+-        if (pageLoaded) return@Runnable
+-        record("硬看门狗触发：仍未 onPageFinished，强制揭开并列诊断")
+-        reportBlank()
++        if (pageLoaded || skeleton.visibility != View.VISIBLE) return@Runnable
++        probeContent { snapshot ->
++            if (pageLoaded) return@probeContent
++            val streak = bumpBlankStreak(snapshot)
++            when (RenderWatchPolicy.verdict(snapshot, deadlineReached = true, blankStreak = streak)) {
++                RenderWatchPolicy.Verdict.REVEAL -> {
++                    record("硬看门狗：DOM 已有内容，正常揭开骨架（首屏只是慢）")
++                    pageLoaded = true
++                    hideSkeleton()
++                }
++
++                RenderWatchPolicy.Verdict.DIAGNOSE -> {
++                    record("硬看门狗触发：到点仍无内容，列诊断")
++                    reportBlank()
++                }
++
++                RenderWatchPolicy.Verdict.KEEP_WAITING -> Unit // 还差一次确认，交给 revealTick 继续
++            }
++        }
+     }
+ 
+     /**
+-     * 页面加载完成后再过几秒确认一次 DOM：
+-     * "加载完了但什么都没渲染"（脚本没跑/脚本报错）同样要给出诊断，
+-     * 不能只是把浮层揭开、然后让用户对着一片空白。
++     * 页面加载完成后**多次**复核 DOM（区块 6 改）：
++     * "加载完了但什么都没渲染"（脚本没跑/脚本报错）要给出诊断，
++     * 但慢速首屏不该被单次结论钉死 —— 复核对 [RenderWatchPolicy.RECHECK_DELAYS_MS]
++     * 递增重试，只有连续 [RenderWatchPolicy.REQUIRED_BLANK_STREAK] 次都空才列诊断。
+      */
+-    private val postRenderCheck = Runnable {
+-        if (diagView != null) return@Runnable
+-        probeContent { snapshot ->
+-            if (snapshot != null && ContentProbe.looksUnrendered(snapshot)) {
+-                record("onPageFinished 之后仍是空 DOM，列出诊断")
+-                reportBlank()
++    private val recheck = object : Runnable {
++        override fun run() {
++            if (diagView != null || pageLoaded) return
++            val isLastAttempt = RenderWatchPolicy.nextRecheckDelay(recheckAttempt + 1) == null
++            probeContent { snapshot ->
++                if (diagView != null) return@probeContent
++                val streak = bumpBlankStreak(snapshot)
++                when (RenderWatchPolicy.verdict(snapshot, deadlineReached = isLastAttempt, blankStreak = streak)) {
++                    RenderWatchPolicy.Verdict.REVEAL -> blankStreak = 0
++
++                    RenderWatchPolicy.Verdict.DIAGNOSE -> {
++                        record("第 " + (recheckAttempt + 1) + " 次复核仍无内容，列诊断")
++                        reportBlank()
++                    }
++
++                    RenderWatchPolicy.Verdict.KEEP_WAITING -> scheduleRecheck(recheckAttempt + 1)
++                }
+             }
+         }
+     }
+ 
+-    /** 揭开浮层 + 做一次壳侧网络探测 + 把诊断摊在屏幕上。 */
++    /** 排下一次复核（[attempt] 从 0 起）；次数用尽则不再排。 */
++    private fun scheduleRecheck(attempt: Int) {
++        val delay = RenderWatchPolicy.nextRecheckDelay(attempt) ?: return
++        recheckAttempt = attempt
++        revealHandler.removeCallbacks(recheck)
++        revealHandler.postDelayed(recheck, delay)
++    }
++
++    /** 更新并返回"连续空 DOM"计数：探测结果可信且为空才累加。 */
++    private fun bumpBlankStreak(snapshot: ContentProbe.Snapshot?): Int {
++        blankStreak = if (RenderWatchPolicy.contentAppeared(snapshot)) 0 else blankStreak + 1
++        return blankStreak
++    }
++
++    /**
++     * 诊断浮层出现后的撤销轮询：内容一出现立刻撤掉浮层（区块 6 新增）。
++     *
++     * 为什么必须有它：浮层原先只有 `onPageFinished` 一处撤销点，而它已经过去了 ——
++     * 于是误报的浮层会一直挂在屏幕上。现在轮询间隔按
++     * [RenderWatchPolicy.CLEAR_POLL_DELAYS_MS] 退避，用尽后停止（＝真空白，浮层留给用户复制）。
++     */
++    private val clearPoll = object : Runnable {
++        override fun run() {
++            if (diagView == null) return
++            probeContent { snapshot ->
++                if (RenderWatchPolicy.contentAppeared(snapshot)) {
++                    record("内容已出现，自动撤销诊断浮层")
++                    dismissDiagnostics()
++                    return@probeContent
++                }
++                val next = RenderWatchPolicy.nextClearPollDelay(clearPollAttempt)
++                clearPollAttempt++
++                if (next != null) revealHandler.postDelayed(clearPoll, next)
++            }
++        }
++    }
++
++    /** 揭开浮层 + 做一次壳侧网络探测 + 把诊断摊在屏幕上（随后由 [clearPoll] 负责撤销）。 */
+     private fun reportBlank() {
+         hideSkeleton()
++        startClearPoll()
+         if (netProbeResult != null) {
+             showContentDiagnostics(lastSnapshot)
+             return
+         }
+         probeNetwork { result ->
+             netProbeResult = result
+-            record("壳侧 HTTP 探测：" + result)
++            record("壳侧 HTTP 探测：$result")
+             showContentDiagnostics(lastSnapshot)
+         }
+     }
+ 
++    private fun startClearPoll() {
++        clearPollAttempt = 0
++        revealHandler.removeCallbacks(clearPoll)
++        revealHandler.postDelayed(clearPoll, RenderWatchPolicy.CLEAR_POLL_DELAYS_MS.first())
++    }
++
+     /** onPageFinished：收尾刷新圈、骨架与按钮状态。 */
+     fun onPageRendered() {
+         pageLoaded = true
+@@ -203,11 +316,15 @@ class FeelHost(
+         swipeRefresh.isRefreshing = false
+         hideSkeleton()
+         updateBackToTopButton(webView.scrollOffset)
++        cadence.reset()
++        lastProbe = null
+         probe.probeNow()
+         dismissDiagnostics()
+         record("onPageFinished（pageLoaded=true）")
+-        revealHandler.removeCallbacks(postRenderCheck)
+-        revealHandler.postDelayed(postRenderCheck, POST_RENDER_CHECK_MS)
++        // 区块 6：复核改成多次重试（原先是"5 秒一次就下结论" → 慢速首屏误报）
++        recheckAttempt = 0
++        blankStreak = 0
++        scheduleRecheck(0)
+     }
+ 
+     /** 错误面板出现时同步浮层状态：面板盖着时不该有刷新圈或悬浮按钮。 */
+@@ -235,12 +352,19 @@ class FeelHost(
+         pageLoaded = pageLoaded,
+     )
+ 
+-    /** 网页状态探测结果（每 2 秒一次，见 [PageStateProbe]）。 */
++    /**
++     * 网页状态探测结果（间隔由 [ProbeCadence] 决定：稳定就退避到 15 s / 30 s，
++     * 一旦主题色或滚动位置有变化立刻回到 2 s）。
++     */
+     private fun onProbe(state: PageTheme.Probe) {
+         if (!stateProbeWorked) {
+             stateProbeWorked = true
+             record("页面脚本探测（PageStateProbe）：有结果（说明 WebView 里 JS 正常）")
+         }
++        // 区块 6：先判"有没有变化"，再决定下一轮的间隔（退避 / 回快档）。
++        val previous = lastProbe
++        lastProbe = state
++        cadence.onResult(probeChanged(previous, state))
+         webView.applyProbeScrollOffset(state.scrollY)
+         applyPalette(PageTheme.decide(state.color, isSystemDark()))
+         // 网络卡住时不能一直转圈（本站只有 3 M 带宽，超时是常态而不是异常）。
+@@ -250,6 +374,18 @@ class FeelHost(
+         }
+     }
+ 
++    /**
++     * 两次探测之间"算不算有变化"。
++     *
++     * 主题色变了当然算；滚动位置动了也算 —— 滚动时保持快档，"返回顶部"按钮的兜底补正
++     * 也就跟着灵敏（主信息源仍是 [ScrollAwareWebView.onScrollChanged]，与本判定无关）。
++     */
++    private fun probeChanged(previous: PageTheme.Probe?, current: PageTheme.Probe): Boolean {
++        if (previous == null) return true
++        if (previous.color != current.color) return true
++        return abs(previous.scrollY - current.scrollY) > SCROLL_CHANGE_PX
++    }
++
+     /** 把配色落实到窗口；同样的配色重复调用会直接返回（探测每 2 秒一次）。 */
+     private fun applyPalette(palette: PageTheme.Palette) {
+         if (palette == appliedPalette) return
