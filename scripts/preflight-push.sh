@@ -99,6 +99,59 @@ if [ -n "$(code_grep 'UnreadApi\.fetch\(' )" ]; then
     || err "调用 UnreadApi.fetch 必须传 AppConfig.SITE_ORIGIN 作为允许前缀（地址收口）"
 fi
 
+# ── 8. 跨包引用必须显式 import ────────────────────────────────────
+#    区块 5 踩过：PushNotifications.kt 用了 shell.PermissionsPolicy 却漏了 import，
+#    本地 klocaltest 不编译依赖 Android 的文件（无 SDK），CI 才报
+#    “Unresolved reference 'PermissionsPolicy'”。这类错误只能靠这条规则提前拦。
+out=$(python3 - 2>&1 <<'PY'
+import os, re, sys
+
+push = "app/src/main/java/com/nhyzcms/clubapp/shell/push"
+shell = "app/src/main/java/com/nhyzcms/clubapp/shell"
+
+# shell 包（含 feel / update 等子包，排除 push 自己）里的公开类型名
+outside = set()
+for root, _dirs, files in os.walk(shell):
+    if os.path.normpath(root) == os.path.normpath(push):
+        continue
+    for f in files:
+        if not f.endswith(".kt"):
+            continue
+        text = open(os.path.join(root, f), encoding="utf-8").read()
+        for m in re.findall(r'^\s*(?:object|class|enum class|interface)\s+([A-Za-z0-9_]+)',
+                            text, re.M):
+            outside.add(m)
+
+local = {f[:-3] for f in os.listdir(push) if f.endswith(".kt")}
+# push 包内声明过的类型（含嵌套类，如 WsHandshake.Result / UnreadApi.Result）也要排除，
+# 否则会被 shell 包里的同名嵌套类（如 MediaSharer.Result）误判为“跨包未 import”。
+for f in os.listdir(push):
+    if not f.endswith(".kt"):
+        continue
+    text = open(os.path.join(push, f), encoding="utf-8").read()
+    for m in re.findall(r'^\s*(?:object|class|enum class|interface)\s+([A-Za-z0-9_]+)', text, re.M):
+        local.add(m)
+
+problems = []
+for f in sorted(os.listdir(push)):
+    if not f.endswith(".kt"):
+        continue
+    path = os.path.join(push, f)
+    raw = open(path, encoding="utf-8").read()
+    raw = re.sub(r'/\*.*?\*/', '', raw, flags=re.S)   # 去掉块注释
+    raw = re.sub(r'//[^\n]*', '', raw)                # 去掉行注释
+    imported = set(re.findall(r'^import\s+[\w.]*\.([A-Za-z0-9_]+)\s*$', raw, re.M))
+    for name in sorted(outside):
+        if name in local or name in imported:
+            continue
+        if re.search(r'\b' + re.escape(name) + r'\s*[.(]', raw):
+            problems.append(f"{path}: 用了 {name} 但没有 import（它不在 push 包里）")
+if problems:
+    sys.exit("；".join(problems))
+print("跨包引用检查通过")
+PY
+) || err "$out"
+
 if [ "$fail" -eq 0 ]; then
   echo "[预检-push] 全部通过 ✅"
 else

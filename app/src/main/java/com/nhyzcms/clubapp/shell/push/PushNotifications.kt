@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.nhyzcms.clubapp.MainActivity
 import com.nhyzcms.clubapp.R
 import com.nhyzcms.clubapp.shell.AppConfig
+import com.nhyzcms.clubapp.shell.PermissionsPolicy
 
 /**
  * 系统通知与图标角标。
