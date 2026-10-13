@@ -69,6 +69,9 @@ data class UpdateManifest(
             "showBackToTop" to true,
             // 铺满状态栏（沉浸式）：默认关闭，原因见 shell/feel/EdgeToEdgePolicy 的注释
             "edgeToEdge" to false,
+            // 区块 6（弱网与性能）：壳侧拦截 Live2D 素材（约 60 MB）。
+            // 网站侧已按视口宽度不挂载看板娘，这层是兜底；远程置 false 可关掉拦截。
+            "blockLive2dAssets" to true,
         )
     }
 }

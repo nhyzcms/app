@@ -42,6 +42,22 @@ object AppConfig {
     const val NOTIFICATION_CHANNEL_ID = "unread"
 
     /**
+     * 「大而不必要」的静态资源路径前缀（站点**相对路径**，区块 6）。
+     *
+     * 目前只有 Live2D 看板娘：模型 + 4096 纹理在服务器上约 60 MB，而服务器只有 3 M 带宽、
+     * 无 CDN，用户也明确要求「App 上不展示 live2d」。
+     *
+     * 网站侧已经按「窗口宽度 ≤ 1024 px 不挂载看板娘」挡住（实测 2026-10-13：
+     * App UA 在生产 access.log 里**没有任何 `/static/live2d/` 请求**），
+     * 所以壳侧这层是**兜底** —— 网站改规则、或个别 ROM 上报的视口偏大时也不会白下几十 MB。
+     * 命中后由 shell/perf/PerfHost 返回「空体 200」，网页自然降级。
+     * 清单开关 `blockLive2dAssets`（默认开）可远程关掉。
+     *
+     * 换站点路径时改这里（唯一真源），不要在拦截器里写死字符串。
+     */
+    val BLOCKED_ASSET_PREFIXES: List<String> = listOf("/static/live2d/")
+
+    /**
      * FileProvider authority 的**唯一真源**（拍照临时文件与分享图片都用它）。
      *
      * 必须与 AndroidManifest 里 provider 的 android:authorities="${applicationId}.fileprovider" 一致；

@@ -9,6 +9,7 @@ import android.net.http.SslError
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 
@@ -29,7 +30,26 @@ class WebShellClient(
      * 关掉时外链在壳内加载；明文（http）拦截不依赖它——NavPolicy 会先拒掉。
      */
     private val externalLinkInBrowser: () -> Boolean = { true },
+    /**
+     * 大资源闸门（区块 6）：返回非 null 就用这个应答替掉真实请求，返回 null 走正常加载。
+     * 由 [com.nhyzcms.clubapp.shell.perf.PerfHost.interceptHeavyAsset] 提供（Live2D 兜底拦截）。
+     *
+     * ⚠️ WebView 会在**后台线程**调用它：实现必须是纯判定 + 立即返回，不许网络 I/O、不许碰 WebView。
+     */
+    private val resourceGate: ((WebResourceRequest) -> WebResourceResponse?) = { null },
 ) : WebViewClient() {
+
+    /**
+     * 子资源闸门。**主文档一律放行**（拦主文档等于白屏），判定与安全边界都在
+     * [com.nhyzcms.clubapp.shell.perf.HeavyAssetPolicy] 里（纯逻辑、可单测）。
+     */
+    override fun shouldInterceptRequest(
+        view: WebView,
+        request: WebResourceRequest,
+    ): WebResourceResponse? {
+        if (request.isForMainFrame) return null
+        return runCatching { resourceGate(request) }.getOrNull()
+    }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         // 子框架与子资源不干预，避免把页面里的内嵌内容（如图片、视频）也拦下来。
