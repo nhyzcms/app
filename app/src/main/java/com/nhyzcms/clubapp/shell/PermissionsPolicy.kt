@@ -5,7 +5,7 @@ import java.util.Locale
 /**
  * 运行时权限策略（纯函数，可 JVM 单测）。
  *
- * 本块涉及两个权限，都是“能不申请就不申请”的结果：
+ * 本块涉及三个权限，都是“能不申请就不申请”的结果：
  *
  * [CAMERA] —— 拍照上传需要。因为我们在清单里声明了它（这样相机入口才能稳定出现），
  * 而一旦声明，Android 就要求调用方自己持有，否则 ACTION_IMAGE_CAPTURE 会被拒。
@@ -14,6 +14,9 @@ import java.util.Locale
  * DownloadManager 写公共「下载」目录在这两个版本要求写权限（Android 10 起不再需要）。
  * 清单里用 maxSdkVersion="28" 限定，Android 10+ 的机器上是“声明但不申请也不生效”。
  * 管理员已确认（2026-10-11）可以把下载落到公共目录；权限被拒则退回 App 目录，不影响下载本身。
+ *
+ * [POST_NOTIFICATIONS] —— 区块 5：Android 13（API 33）起发通知要运行时权限。
+ * 只在需要时申请（见 [notificationPermission]）；被拒后壳就不发通知也不显示角标（不反复弹窗）。
  *
  * 文件选择（图片/文档/视频）**不需要任何权限**：走系统 SAF，系统按 URI 授予临时读权限。
  * 所以读取媒体库与读取外部存储这两类权限一个都不申请。
@@ -31,6 +34,9 @@ object PermissionsPolicy {
 
     const val WRITE_EXTERNAL_STORAGE = "android.permission.WRITE_EXTERNAL_STORAGE"
 
+    /** 通知权限（区块 5）：Android 13（API 33）起才需要运行时申请。 */
+    const val POST_NOTIFICATIONS = "android.permission.POST_NOTIFICATIONS"
+
     /** 拍照需要申请的权限集合（只有相机）。 */
     fun capturePermissions(): List<String> = listOf(CAMERA)
 
@@ -40,6 +46,13 @@ object PermissionsPolicy {
      */
     fun downloadPermissions(sdkInt: Int): List<String> =
         if (sdkInt <= 28) listOf(WRITE_EXTERNAL_STORAGE) else emptyList()
+
+    /**
+     * 该 SDK 版本需要申请的"发通知"权限；低版本返回 null（清单里同样声明了，
+     * 但 POST_NOTIFICATIONS 从 API 33 才有意义，低版本上系统直接视为已授予）。
+     */
+    fun notificationPermission(sdkInt: Int): String? =
+        if (sdkInt >= 33) POST_NOTIFICATIONS else null
 
     /**
      * 是否应当把「拍照」塞进文件选择器。

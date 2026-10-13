@@ -23,6 +23,12 @@
       而是由用户在系统「安装未知应用」页面逐个允许；壳不会绕过这一步（见 shell/update/UpdateInstaller）。
     -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!--
+      区块 5（消息与角标）：Android 13（API 33）起发通知需要运行时权限。
+      低版本上这条声明不生效（系统视为已授予）。被拒绝时壳不发通知、也不显示角标，
+      网页里的未读徽标照常工作；不会反复弹窗骚扰（见 shell/push/PushHost）。
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- 没有摄像头的设备（平板、部分模拟器）也要能安装 -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -39,7 +45,8 @@
     </queries>
 
     <!--
-      android:name=".ClubApp"：Application 里只装一件事——崩溃自记录（见 shell/CrashReporter）：
+      android:name=".ClubApp"：Application 里装两件事——崩溃自记录（见 shell/CrashReporter）
+      与区块 5 的消息/角标（见 shell/push/PushHost）：
       未捕获异常先落盘，下次启动时弹出来，用户点一下就能复制/分享堆栈。
       为什么需要：用户手机上既没有 adb 也读不到 logcat，2026-10-12 的启动闪退因此只能靠读代码反推
       （见 docs/FIX-20261012-STARTUP-CRASH.md）。
@@ -85,6 +92,8 @@
               深链：从浏览器等处点开本站链接可直接进 App。
               注意：站点目前用 IP（8.153.145.175），无法做 App Links 官方校验（需域名 + assetlinks.json），
               所以首次点击时系统会询问“打开方式”。以后换成域名可补 android:autoVerify="true"。
+              区块 5 的未读通知也复用它：PendingIntent 发的是同一形态的站内深链
+              （https://8.153.145.175/#/messages/12）。
             -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

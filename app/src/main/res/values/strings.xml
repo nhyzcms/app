@@ -112,4 +112,12 @@
     <!-- 空白页诊断（见 shell/feel/ContentProbe）：网页迟迟画不出内容时出现在屏幕底部，点一下复制 -->
     <string name="diag_blank_hint">页面没能显示出来。点这里复制诊断信息，发给管理员。</string>
     <string name="toast_diag_copied">诊断信息已复制</string>
+
+    <!-- 区块 5：消息与角标（前台 WebSocket + 系统通知/图标角标；见 shell/push/） -->
+    <string name="notif_channel_name">新消息</string>
+    <string name="notif_channel_desc">有新私信或通知时更新图标角标（静音、无横幅，不打扰）</string>
+    <string name="notif_title">南汇一中传媒社</string>
+    <string name="notif_dm">你有 %1$d 条未读私信，点击查看</string>
+    <string name="notif_notice">你有 %1$d 条未读通知，点击查看</string>
+    <string name="notif_mixed">%1$d 条未读私信、%2$d 条未读通知，点击查看</string>
 </resources>
