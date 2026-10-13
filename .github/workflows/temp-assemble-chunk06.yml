@@ -6,13 +6,18 @@
 # 超出上限，因此拆成 6 个补丁，由本工作流应用并用 sha256 校验后提交。
 #
 # ⚠️ 本文件与 .github/parts/ 都是**临时**的：区块 6 合并后由维护者删除。
-# 幂等：补丁已应用时跳过（避免重复运行时把文件改坏）。
+# 幂等：补丁已应用时跳过；分片被清理后整个作业直接跳过。
+#
+# 踩过的坑：一开始把 `hashFiles()` 写在作业级 `if` 里 —— 作业级 if 在 checkout
+# 之前求值，工作区是空的，hashFiles 返回空串 → 作业被静默 skipped（什么都不发生）。
+# 改成 checkout 之后在步骤里判。
 name: temp-assemble-chunk06
 
 on:
   push:
     paths:
       - '.github/parts/**'
+      - '.github/workflows/temp-assemble-chunk06.yml'
 
 permissions:
   contents: write
@@ -20,12 +25,23 @@ permissions:
 
 jobs:
   assemble:
-    if: ${{ hashFiles('.github/parts/chunk06-01.patch') != '' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
+      - name: 检查分片是否存在
+        id: parts
+        shell: bash
+        run: |
+          if [ -f .github/parts/chunk06-01.patch ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "分片已清理，跳过"
+          fi
+
       - name: Apply patches
+        if: steps.parts.outputs.present == 'true'
         shell: bash
         run: |
           set -uo pipefail
@@ -45,6 +61,7 @@ jobs:
           done
 
       - name: Verify sha256
+        if: steps.parts.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +69,7 @@ jobs:
           echo "d1f82fb987d953e6c9ef3af68b82ca75e9121409f492a9a0d7802de6d0980b6a  app/src/main/java/com/nhyzcms/clubapp/MainActivity.kt" | sha256sum -c -
 
       - name: Commit and push
+        if: steps.parts.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
