@@ -95,7 +95,7 @@ class PerfHost(
         prefs.edit().putLong(KEY_LAST_MEMORY_TRIM, now).apply()
     }
 
-    // ── 内部 ──────────────────────────────────────────────────────────────
+    // ── 内部 ──────────────────────────────────────────────────────────────────
 
     private fun detectDeviceClass(): DeviceClass {
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
