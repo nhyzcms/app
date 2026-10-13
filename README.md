@@ -24,7 +24,8 @@
 | **Kotlin + 系统 WebView（本项目）** | ✅ | **3~5 MB**，零第三方运行时依赖 | ✅ 采用 |
 
 适配约束：服务器 2 vCPU / 2 GB 内存 / **3 M 带宽**、不能使用 CDN —— 因此 APK 必须小、
-首屏资源必须靠 HTTP 缓存与压缩（网站侧已完成 4.2× gzip），App 侧只做缓存与预加载，
+首屏资源必须靠 HTTP 缓存与压缩（网站侧已完成 4.2× gzip），App 侧只做**缓存复用与按需降级**
+（区块 6：探测降频、大资源兜底拦截、低内存降级；实测瓶颈是图片而非 JS，故**不做预取**），
 **不做任何服务端代理**。
 
 ## 3. 目录结构
@@ -44,7 +45,7 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
 │   └── chunks/CHUNK-0N-REPORT.md   ← 每一块的开发说明
 ├── .github/workflows/android.yml   ← CI：预检 + 单测 + debug 构建 / tag 自动发 Release
 ├── settings.gradle.kts / build.gradle.kts / gradle.properties / version.properties
-├── scripts/                        ← preflight.sh（静态预检）、CI 辅助脚本、
+├── scripts/                        ← preflight*.sh（分区块静态预检；preflight-feel.sh 连带跑全部专项）、CI 辅助脚本、
 │                                     nginx-app-update.conf（/app-update/ 片段）、
 │                                     publish-apk.sh（把 APK 发到自托管目录并更新清单）
 ├── deploy/app-update/              ← 要拷到服务器 /opt/club/app-update/ 的清单模板与部署说明
@@ -73,6 +74,7 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
     │   │       ├── MediaSharer.kt           分享图片文件本体（缓存 → FileProvider → ACTION_SEND）
     │   │       ├── CrashText.kt             崩溃报告文本排版（纯函数，可单测）
     │   │       ├── CrashReporter.kt         崩溃自记录：未捕获异常落盘 + 下次启动弹窗（可复制/分享）
+    │   │       ├── DiagLog.kt               运行轨迹落盘（filesDir/diag/last-run.txt，FeelHost/PerfHost 共用）
     │   │       ├── feel/                    区块 4：原生手感（启动页/配色/骨架/下拉刷新/返回顶部）
     │   │       │   ├── PageTheme.kt             网页主题色 → 壳配色（纯函数）
     │   │       │   ├── BackExitPolicy.kt        返回键决策：双击才退出（纯函数）
@@ -80,9 +82,24 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
     │   │       │   ├── PullToRefreshPolicy.kt   下拉刷新的门控与超时（纯函数）
     │   │       │   ├── EdgeToEdgePolicy.kt      铺满开关与浮层让位（纯函数）
     │   │       │   ├── ScrollAwareWebView.kt    同步上报滚动位置的 WebView
-    │   │       │   ├── PageStateProbe.kt        每 2 s 读网页主题色/滚动位置（固定脚本）
+    │   │       │   ├── PageStateProbe.kt        读网页主题色/滚动位置（固定脚本；间隔由 ProbeCadence 动态给）
     │   │       │   ├── ContentProbe.kt          网页「画出内容了吗」探测（纯函数；决定骨架揭开与空白诊断）
+    │   │       │   ├── RenderWatchPolicy.kt     区块 6：首屏看护复核定策（纯函数；多次重试 + 诊断自动撤销）
+    │   │       │   ├── ProbeCadence.kt          区块 6：状态探测退避曲线（纯函数；稳定 → 15 s，有变化回 2 s）
     │   │       │   └── FeelHost.kt              把上述能力接到窗口与视图的宿主
+    │   │       ├── perf/                    区块 6：弱网与性能（省流量 / 省内存）
+    │   │       │   ├── DeviceClass.kt            设备分级与派生参数（纯函数）
+    │   │       │   ├── HeavyAssetPolicy.kt       「大而不必要」资源判定（纯函数；Live2D 素材拦截）
+    │   │       │   ├── CacheTrimPolicy.kt        WebView 缓存清理时机（纯函数；默认什么都不做）
+    │   │       │   └── PerfHost.kt               设备分级 / 大资源拦截 / 缓存维护的宿主
+    │   │       ├── push/                    区块 5：消息与角标（前台 WebSocket + 系统通知角标）
+    │   │       │   ├── WsFrame.kt / WsHandshake.kt / PushProtocol.kt  帧、握手、事件解析（纯函数）
+    │   │       │   ├── PushSocket.kt            前台 WSS 长连接（主机名校验 + 心跳 + 退避重连）
+    │   │       │   ├── UnreadBadge.kt           未读角标状态机（纯函数）
+    │   │       │   ├── UnreadApi.kt             未读计数校准（地址收口）
+    │   │       │   ├── SessionCookies.kt        会话 Cookie 快照（只在主线程取）
+    │   │       │   ├── PushNotifications.kt     静音通知 + launcher 角标
+    │   │       │   └── PushHost.kt              前后台生命周期接线（MainActivity 零改动）
     │   │       └── update/                  区块 3：三级更新（L0 热 / L1 清单 / L2 自升级）
     │   │           ├── MiniJson.kt              零依赖 JSON 解析（可单测）
     │   │           ├── UpdateManifest.kt        清单数据模型 + 解析（字段级容错）
@@ -109,8 +126,9 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
 gradle :app:assembleDebug          # 产物 app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
-# 提交前必跑：静态预检（5 秒，不需要 JDK/SDK）
-bash scripts/preflight.sh
+# 提交前必跑：静态预检（几秒，不需要 JDK/SDK）
+bash scripts/preflight.sh          # 基础规则（导航 / 权限 / 资源 / 密钥 …）
+bash scripts/preflight-feel.sh     # 手感规则，并连带执行同目录其它专项脚本 preflight-*.sh
 
 # 纯逻辑单测（纯函数，不需要设备）
 gradle :app:testDebugUnitTest
@@ -158,17 +176,23 @@ gradle :app:testDebugUnitTest
   **站点换 CA 时必须同步维护**，见 [docs/FIX-20261012-CERT-R46.md](docs/FIX-20261012-CERT-R46.md)；
 - 不信任用户安装的 CA（关闭 user trust anchors），防中间人；
 - 站内导航白名单 = 本站 host；其它域名一律交给系统浏览器，未知 scheme 一律拦截；
-- **权限只有 5 个**（完整清单见 SECURITY.md §2.1）：
+- **权限只有 6 个**（完整清单见 SECURITY.md §2.1）：
+  - `INTERNET` / `ACCESS_NETWORK_STATE`：加载站点、判断网络（后者区块 1 起就在）；
   - 文件选择走系统 SAF、分享图片走 App 缓存，都不需要读取类权限；
   - `WRITE_EXTERNAL_STORAGE` **只在 Android 8/9 上**用来把下载写进公共「下载」目录
     （`maxSdkVersion="28"`，且仅在下载时申请；拒了退 App 目录），preflight 会强制校验这个限定；
   - `CAMERA` 只在“将要提供拍照入口”时申请；
+  - `POST_NOTIFICATIONS`（区块 5）：Android 13+ 进 App 约 4 秒后弹一次，用于未读通知与 launcher 角标；
+    拒绝则不发通知、无角标，网页内徽标照常（绝不反复弹窗）；
   - `REQUEST_INSTALL_PACKAGES` 只用于安装自己下载的更新包（系统仍会要求用户逐个允许“安装未知应用”，
     壳不绕过也不静默安装）；
 - 所有带会话的请求（`DownloadManager`、分享图片）**必须手动带 Cookie**；
 - 更新包必须**校验 sha256 + 签名一致**才允许安装；安装来源链接只允许本站 / GitHub Releases；
 - 壳内执行 JS 只允许**固定常量脚本**（区块 4：读主题色、滚回顶部、探测网页内容），
   禁止拼接变量，也不用 JS 桥接（见 SECURITY.md §4.1）；
+- 壳侧**只拦白名单里的"不必要"资源**（区块 6：`/static/live2d/` 的看板娘素材约 60 MB，
+  拦截后返回空体 200）；**主文档永不拦截**，白名单唯一真源在 `AppConfig.BLOCKED_ASSET_PREFIXES`，
+  清单开关 `blockLive2dAssets` 可远程关闭；
 - 密钥永不入库：keystore 只存在于 GitHub Secrets（base64）；
 - Release 构建关闭 WebView 远程调试（`BuildConfig.DEBUG` 才开）。
 
@@ -180,8 +204,8 @@ gradle :app:testDebugUnitTest
 | 2 | 全部功能能力：文件上传/下载、相机、权限、长按保存、分享 | ✅ 已完成，真机验收通过 2026-10-12（[报告](docs/chunks/CHUNK-02-REPORT.md)） |
 | 3 | 三级更新机制（manifest + APK 自升级） | ✅ 已完成（代码 + 清单端点已部署 2026-10-11 + 真机验收通过 2026-10-12）（[报告](docs/chunks/CHUNK-03-REPORT.md)） |
 | 4 | 原生手感：沉浸式配色、启动页、骨架屏、下拉刷新、手势返回、返回顶部 | ✅ 已完成，真机验收通过 2026-10-12（[报告](docs/chunks/CHUNK-04-REPORT.md)） |
-| 5 | 站内消息与角标（实时/通知） | ⏳ |
-| 6 | 弱网与性能（3M 带宽适配、缓存、预加载） | ⏳（已挂入 2026-10-12 反馈的卡顿 / 诊断浮层去误报 / 不加载 live2d，见 ROADMAP） |
+| 5 | 站内消息与角标（前台 WSS / 静音通知驱动角标 / 点通知直达会话） | 🟡 代码就绪（PR #16 已合并 2026-10-13），待真机验收（[报告](docs/chunks/CHUNK-05-REPORT.md)｜[跨仓库契约](docs/PUSH-CONTRACT.md)） |
+| 6 | 弱网与性能（首屏看护去误报 / 探测降频 / Live2D 兜底拦截 / 低内存降级） | 🟡 代码就绪（2026-10-13，CI 绿），待真机验收（[报告](docs/chunks/CHUNK-06-REPORT.md)） |
 | 7 | 签名与首个 Release 发布 | ⏳ |
 | 8 | 网站侧配套（App 模式 UI 覆盖全部功能 + manifest 端点） | ⏳（已挂入网站侧不注入 live2d + 大图懒加载，见 ROADMAP） |
 | 9 | 测试与验收（手测清单 / 回归流程 / E2E） | ⏳ |
@@ -217,9 +241,12 @@ gradle :app:testDebugUnitTest
 | [CI-WORKFLOW.md](docs/CI-WORKFLOW.md) | CI 行为与发版前置条件 |
 | [APP-MANIFEST.md](docs/APP-MANIFEST.md) | 远程配置清单字段契约 |
 | [FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md) | 网站功能覆盖台账 |
+| [PUSH-CONTRACT.md](docs/PUSH-CONTRACT.md) | 跨仓库实时消息契约（连接 / 事件 / 未读接口 / 深链） |
 | [chunks/CHUNK-02-REPORT.md](docs/chunks/CHUNK-02-REPORT.md) | 区块 2（文件/拍照/下载/长按/分享）交付说明 |
 | [chunks/CHUNK-03-REPORT.md](docs/chunks/CHUNK-03-REPORT.md) | 区块 3（三级更新）交付说明与服务器配置步骤 |
 | [chunks/CHUNK-04-REPORT.md](docs/chunks/CHUNK-04-REPORT.md) | 区块 4（原生手感）交付说明与真机验收清单 |
+| [chunks/CHUNK-05-REPORT.md](docs/chunks/CHUNK-05-REPORT.md) | 区块 5（消息与角标）交付说明与真机验收清单 |
+| [chunks/CHUNK-06-REPORT.md](docs/chunks/CHUNK-06-REPORT.md) | 区块 6（弱网与性能）交付说明与真机验收清单 |
 | [FIX-20261012-STARTUP-CRASH.md](docs/FIX-20261012-STARTUP-CRASH.md) | 故障报告：启动闪退（后台线程访问 WebView） |
 | [FIX-20261012-BLANK-SCREEN.md](docs/FIX-20261012-BLANK-SCREEN.md) | 故障报告：黑/白屏（骨架浮层永不揭开） |
 | [FIX-20261012-BLANK-SCREEN-2.md](docs/FIX-20261012-BLANK-SCREEN-2.md) | 故障报告：硬看门狗 + 壳侧网络探测 + 诊断浮层 |
