@@ -152,6 +152,30 @@ print("跨包引用检查通过")
 PY
 ) || err "$out"
 
+# ── 9. 诊断只允许在 debug 包生效，且自检/诊断通知必须走独立渠道 ────────────
+#    区块 5 事故后加：真机没有任何可观测性，需要“看得见”的自检；
+#    但自检绝不能进 release（打扰用户），也不能污染未读角标语义。
+if [ -f "$PUSH_DIR/PushHost.kt" ]; then
+  if grep -q 'showSelfTest\|showDiagnostic\|selfTestOnce\|report(' "$PUSH_DIR/PushHost.kt"; then
+    grep -q 'PushDiagnostics' "$PUSH_DIR/PushHost.kt" \
+      || err "诊断/自检必须走 PushDiagnostics（集中管理，便于统一加 debug 限定）"
+  fi
+fi
+if [ -f "$PUSH_DIR/PushDiagnostics.kt" ]; then
+  grep -q 'BuildConfig.DEBUG' "$PUSH_DIR/PushDiagnostics.kt" \
+    || err "诊断/自检必须用 BuildConfig.DEBUG 包住（release 包不得打扰用户）"
+fi
+if [ -f "$NOTIF" ]; then
+  if grep -q 'showSelfTest\|showDiagnostic' "$NOTIF"; then
+    grep -q 'SELF_TEST_CHANNEL_ID' "$NOTIF" \
+      || err "自检/诊断通知必须走独立的 AppConfig.SELF_TEST_CHANNEL_ID（不得复用未读渠道）"
+    grep -q 'setShowBadge(false)' "$NOTIF" \
+      || err "自检/诊断通知的渠道必须 setShowBadge(false)（不能污染未读角标语义）"
+    grep -q 'BuildConfig.DEBUG' "$NOTIF" \
+      || err "自检/诊断通知必须在 debug 包才发（release 不得打扰用户）"
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "[预检-push] 全部通过 ✅"
 else
