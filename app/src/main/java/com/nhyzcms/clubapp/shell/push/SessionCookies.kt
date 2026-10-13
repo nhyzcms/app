@@ -12,10 +12,15 @@ import android.webkit.CookieManager
  * 与 2026-10-12 那次启动闪退同源（后台线程读 `webView.settings` 会直接抛 RuntimeException，
  * 见 docs/FIX-20261012-STARTUP-CRASH.md）。所以本类只在主线程取**不可变快照**，
  * 再把字符串交给后台线程使用，绝不在 I/O 线程里回调这里。
+ *
+ * ⚠️ 2026-10-13 实测到的坑：**冷启动刚开始时 `getCookie()` 可能返回空**
+ * （Cookie 库异步加载尚未完成）。当时只在 `onActivityStarted` 取一次快照，
+ * 拿到空就整条链路静默放弃、之后再不重试 → 真机上"完全没反应"
+ * （见 docs/FIX-20261013-PUSH-NOT-FIRING.md）。
+ * 现在的做法：主线程每 15 秒重新取一次快照（见 [PushHost] 的看门狗），
+ * 从"无会话"变成"有会话"就自动把推送拉起来。
  */
 object SessionCookies {
-
-    private const val SESSION_KEY = "sessionid="
 
     /** 取本站 cookie 串（形如 sessionid=...; csrftoken=...）；没有 cookie 时返回 null。 */
     fun snapshot(origin: String): String? {
@@ -23,6 +28,6 @@ object SessionCookies {
         return raw?.takeIf { it.isNotBlank() }
     }
 
-    /** 是否已登录：以 sessionid 是否存在为准（未登录就不该连 WS、也不该显示角标）。 */
-    fun isLoggedIn(cookie: String?): Boolean = cookie != null && cookie.contains(SESSION_KEY)
+    /** 便捷判定（纯逻辑实现在 [PushSession] 里，这里只是转发，便于调用方少一个 import）。 */
+    fun isLoggedIn(cookie: String?): Boolean = PushSession.isLoggedIn(cookie)
 }

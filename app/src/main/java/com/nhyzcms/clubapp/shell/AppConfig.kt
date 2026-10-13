@@ -14,7 +14,7 @@ object AppConfig {
 
     /**
      * 允许在壳内打开的主机白名单。
-     * 换域名/改用域名访问时必须同步修改，否则所有站内跳转都会被判为外链交给浏览器。
+     * ❗ 换域名/改用域名访问时必须同步修改，否则所有站内跳转都会被判为外链交给浏览器。
      */
     val ALLOWED_HOSTS: Set<String> = setOf("8.153.145.175")
 
@@ -42,20 +42,11 @@ object AppConfig {
     const val NOTIFICATION_CHANNEL_ID = "unread"
 
     /**
-     * 「大而不必要」的静态资源路径前缀（站点**相对路径**，区块 6）。
-     *
-     * 目前只有 Live2D 看板娘：模型 + 4096 纹理在服务器上约 60 MB，而服务器只有 3 M 带宽、
-     * 无 CDN，用户也明确要求「App 上不展示 live2d」。
-     *
-     * 网站侧已经按「窗口宽度 ≤ 1024 px 不挂载看板娘」挡住（实测 2026-10-13：
-     * App UA 在生产 access.log 里**没有任何 `/static/live2d/` 请求**），
-     * 所以壳侧这层是**兜底** —— 网站改规则、或个别 ROM 上报的视口偏大时也不会白下几十 MB。
-     * 命中后由 shell/perf/PerfHost 返回「空体 200」，网页自然降级。
-     * 清单开关 `blockLive2dAssets`（默认开）可远程关掉。
-     *
-     * 换站点路径时改这里（唯一真源），不要在拦截器里写死字符串。
+     * 调试自检/诊断通知的**独立渠道**（只有 debug 包会用，见 pushes 的 preflight 第 9 组规则）。
+     * 与未读渠道分开是有意的：自检要能弹出来让人看见，而它**不能**污染角标语义
+     * （角标只该由未读通知驱动）。
      */
-    val BLOCKED_ASSET_PREFIXES: List<String> = listOf("/static/live2d/")
+    const val SELF_TEST_CHANNEL_ID = "push_selftest"
 
     /**
      * FileProvider authority 的**唯一真源**（拍照临时文件与分享图片都用它）。
@@ -72,6 +63,18 @@ object AppConfig {
      */
     fun uaMarker(): String =
         "NhyzClubApp/" + BuildConfig.VERSION_NAME + " (Android; " + BuildConfig.VERSION_CODE + ")"
+
+    /**
+     * **原生层**请求（HttpURLConnection / SSLSocket）额外带的标记（区块 5 起）。
+     *
+     * 为什么需要：诊断时要能从服务器 access.log 里分清"这条请求是网页发的还是壳的原生层发的"。
+     * 而 WebView 的 UA 与 `WebSettings.getDefaultUserAgent()` 的 UA 几乎一模一样
+     * （都含 `NhyzClubApp/...` 标记），2026-10-13 排查"真机完全没反应"时就卡在这里：
+     * 只能靠"HTTP/1.1 + 无 Referer"间接推断，太绕（见 docs/FIX-20261013-PUSH-NOT-FIRING.md）。
+     * 加上这个后缀后一眼可辨。
+     */
+    fun nativeUaMarker(): String =
+        "NhyzClubShell/" + BuildConfig.VERSION_NAME + " (native; " + BuildConfig.VERSION_CODE + ")"
 
     /** 允许交给系统的非 http(s) scheme；其它 scheme 一律拦截（安全文档第 3 节）。 */
     val SYSTEM_SCHEMES: Set<String> = setOf("tel", "mailto", "sms", "smsto", "geo", "market")
