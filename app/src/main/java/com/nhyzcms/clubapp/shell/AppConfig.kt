@@ -42,6 +42,12 @@ object AppConfig {
     const val NOTIFICATION_CHANNEL_ID = "unread"
 
     /**
+     * 调试自检通知的**独立渠道**（只有 debug 包会用）。
+     * 与未读渠道分开是有意的：自检要能弹出来让人看见，而它**不能**污染角标语义。
+     */
+    const val SELF_TEST_CHANNEL_ID = "push_selftest"
+
+    /**
      * 「大而不必要」的静态资源路径前缀（站点**相对路径**，区块 6）。
      *
      * 目前只有 Live2D 看板娘：模型 + 4096 纹理在服务器上约 60 MB，而服务器只有 3 M 带宽、
@@ -72,6 +78,17 @@ object AppConfig {
      */
     fun uaMarker(): String =
         "NhyzClubApp/" + BuildConfig.VERSION_NAME + " (Android; " + BuildConfig.VERSION_CODE + ")"
+
+    /**
+     * **原生层**请求（HttpURLConnection / SSLSocket）额外带的标记（区块 5 起）。
+     *
+     * 为什么需要：诊断时要能从服务器 access.log 里分清"这条请求是网页发的还是壳的原生层发的"。
+     * 而 WebView 的 UA 与 `WebSettings.getDefaultUserAgent()` 的 UA 几乎一模一样
+     * （都含 `NhyzClubApp/...` 标记），2026-10-13 排查"真机完全没反应"时就卡在这里：
+     * 只能靠"HTTP/1.1 + 无 Referer"间接推断，太绕。加上这个后缀后一眼可辨。
+     */
+    fun nativeUaMarker(): String =
+        "NhyzClubShell/" + BuildConfig.VERSION_NAME + " (native; " + BuildConfig.VERSION_CODE + ")"
 
     /** 允许交给系统的非 http(s) scheme；其它 scheme 一律拦截（安全文档第 3 节）。 */
     val SYSTEM_SCHEMES: Set<String> = setOf("tel", "mailto", "sms", "smsto", "geo", "market")

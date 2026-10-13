@@ -15,13 +15,15 @@ import javax.net.ssl.SSLSocketFactory
 /**
  * 前台 WebSocket 长连接（wss，与网站 `/ws/messaging/` 对齐）。
  *
- * 生命周期约定（与站点 ADR-0015 一致）：**只在前台保活**——不申请前台服务、不做后台保活
- * （国内推送生态 + 耗电限制，见 docs/chunks/CHUNK-05-REPORT.md）。App 退到后台就断，
- * 回到前台由 [PushHost] 重新拉起。
+ * 生命周期约定（与站点 ADR-0015 一致）：**只在前台保活**——不申请前台服务、不做后台保活。
+ * App 退到后台就断，回到前台由 [PushHost] 重新拉起。
  *
  * 线程模型：一个 daemon 线程跑「连接 → 读帧 → 断开 → 退避重连」循环；
  * [stop] 关掉 socket 并唤醒退避等待，让线程立刻退出。[Listener] 回调发生在该线程上，
  * 由上层自己切回主线程（见 [PushHost]）。
+ *
+ * 本文件**不依赖 Android 框架**（只碰 java.* / javax.net.ssl），因此能进本地编译链
+ * （/workspace/kandroidcheck.sh 与 klocaltest.sh），不必等 CI 才发现编译错误。
  *
  * 安全：
  *  · 走 TLS，且**显式开启主机名校验**（endpointIdentificationAlgorithm=HTTPS）——
@@ -70,6 +72,15 @@ class PushSocket(
     @Volatile
     private var output: OutputStream? = null
 
+    /**
+     * 连接循环是否还活着。
+     *
+     * ❗ 宿主必须看它而不是只看"引用非空"：连接线程可能已经退出
+     * （未登录 / 会话失效 / 连续失败），此时旧对象已是死尸，
+     * 只看引用就会"永久再也连不上"（2026-10-13 真机事故的第二个坑）。
+     */
+    val isRunning: Boolean get() = running.get()
+
     /** 启动（幂等）。 */
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -93,7 +104,7 @@ class PushSocket(
     private fun loop() {
         var backoff = MIN_BACKOFF_MS
         while (running.get()) {
-            if (!SessionCookies.isLoggedIn(cookie)) {
+            if (!PushSession.isLoggedIn(cookie)) {
                 state = State.IDLE
                 listener.onClosed("未登录，不连推送")
                 return
