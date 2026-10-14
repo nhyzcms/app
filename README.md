@@ -138,6 +138,11 @@ gradle :app:testDebugUnitTest
 > Gradle 版本）。若要本地用 `./gradlew`，在 Android Studio 里执行一次
 > `gradle wrapper --gradle-version 8.13` 生成即可。详见 [`docs/BUILD.md`](docs/BUILD.md)。
 
+> **提交与推送纪律**见 [`docs/ENGINEERING-ENV.md`](docs/ENGINEERING-ENV.md)：本仓库
+> **不再需要把大文件拆小**（早期"单次写入/推送约 1 万字符上限"的限制已解除，
+> 2026-10-14 实测 2 MiB 二进制一次推送、1.1 万+ 字符文档一次写入均逐字节无损），
+> 但"推送前跑完预检 + 推送后逐字复核"一条都不能省。
+
 ### 4.2 CI（已启用）
 
 | 触发 | 行为 |
@@ -228,6 +233,7 @@ gradle :app:testDebugUnitTest
 3. 跑一次 `gradle :app:assembleDebug`，装到真机，确认能登录、能滚动、能返回；
 4. 读 [`docs/SECURITY.md`](docs/SECURITY.md) 末尾的**改代码自查清单**——每次提交前过一遍；
 5. 想动手就挑 [`docs/ROADMAP.md`](docs/ROADMAP.md) 里状态为 ⏳ 的区块，一区块一 PR。
+6. 踩到坑先查 [`docs/PITFALLS.md`](docs/PITFALLS.md)（构建 / WebView / 推送 / 上传下载 / 协作流程的已知坑与修法）。
 
 ## 9. 文档索引
 
@@ -238,7 +244,10 @@ gradle :app:testDebugUnitTest
 | [SECURITY.md](docs/SECURITY.md) | 威胁模型、权限清单、安全控制 |
 | [ROADMAP.md](docs/ROADMAP.md) | 分块计划与验收标准 |
 | [BUILD.md](docs/BUILD.md) | 构建、签名、版本号规则、发布步骤 |
-| [CI-WORKFLOW.md](docs/CI-WORKFLOW.md) | CI 行为与发版前置条件 |
+| [CI-WORKFLOW.md](docs/CI-WORKFLOW.md) | CI 行为、失败排障与发版前置条件 |
+| [ENGINEERING-ENV.md](docs/ENGINEERING-ENV.md) | 工程环境与工具链：工作区能力、预检链、复核纪律、**大文件推送已不再受限** |
+| [CODE-MAP.md](docs/CODE-MAP.md) | 代码地图：文件 → 职责 → 约束，含"我要改 X 动哪里"索引 |
+| [PITFALLS.md](docs/PITFALLS.md) | 坑位与排查手册（构建 / WebView / 会话推送 / 上传下载 / 协作流程） |
 | [APP-MANIFEST.md](docs/APP-MANIFEST.md) | 远程配置清单字段契约 |
 | [FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md) | 网站功能覆盖台账 |
 | [PUSH-CONTRACT.md](docs/PUSH-CONTRACT.md) | 跨仓库实时消息契约（连接 / 事件 / 未读接口 / 深链） |
