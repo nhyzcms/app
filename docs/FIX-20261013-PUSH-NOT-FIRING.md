@@ -53,7 +53,8 @@ override fun onActivityStarted(activity: Activity) {
    一眼就能分清"网页发的 / 壳发的"，不用再做 HTTP/1.1 + Referer 的推断。
 5. **本地编译校验**（工具链，见 §5）：把"依赖 Android 的文件"也纳入本地真编译。
 
-顺便把两个大文件拆开（更内聚、也绕开工具单次推送上限）：
+顺便把两个大文件拆开（更内聚；当时是为了绕开工具单次推送上限，该限制已于 2026-10-14 解除，
+见 [`ENGINEERING-ENV.md`](ENGINEERING-ENV.md) §1）：
 `PushHost`（连接/生命周期）· `PushNotifier`（通知渲染）· `PushDiagnostics`（诊断）。
 
 ## 4. 怎么验证修好了（用户侧）
