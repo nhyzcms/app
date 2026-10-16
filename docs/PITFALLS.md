@@ -89,6 +89,37 @@ private val clearPoll: Runnable = object : Runnable {
 
 `assembleDebug` 必须排在单测之后、release 变体作为发版阻断；失败时把 `unit-test.log` / `build.log` 的尾巴贴成 PR 评论（见 `docs/CI-WORKFLOW.md` §5）。
 
+### 1.9 Gradle 签名配置里的「自赋值」→ 只在 release 打包时才炸
+
+```kotlin
+// 错：在「带接收者的 lambda」里，裸名会优先解析成接收者自己的属性
+create("release") {
+    storePassword = keystorePassword   // ✅ 侥幸正常：右边名字不同
+    keyAlias = keyAlias                // ❌ 自己赋给自己，值仍是 null
+    keyPassword = keyPassword          // ❌ 同上
+}
+
+// 对：变量名不同 + 显式 this.
+create("release") {
+    this.storePassword = envKeystorePassword
+    this.keyAlias = envKeyAlias
+    this.keyPassword = envKeyPassword
+}
+```
+
+- 症状：`NullPointerException: SigningConfig "release" is missing required property "keyPassword"`，
+  而且**静态预检、单测、keystore 指纹闸门全部通过** —— 它们都不碰 Gradle 的签名 DSL，
+  所以只有真正跑 `assembleRelease` 才会暴露。2026-10-17 首发 tag `v0.1.0` 就是这么红的。
+- 为什么“只错一半”：`storePassword = keystorePassword` 右边名字不同，能解析到脚本属性，于是正常；
+  这让现象看起来像“签名配置没问题”，极难一眼看出来。
+- 本地复现（**不需要 Android SDK**）：用 `kotlinc` 写一个同名 stub
+  （`class Cfg { var keyPassword: String? = null }` + `fun create(name: String, body: Cfg.() -> Unit)`），
+  注意要把 `val` 放在**外层类**里（模拟 .gradle.kts 的脚本属性；若放在函数内会变成编译错误
+  `val cannot be reassigned`，反而看不到这个坑），运行后能看到 `keyPassword = null`。
+- 防线：① `scripts/preflight-signing.sh` 禁止 `key = key` 形式的自赋值；
+  ② 工作流的**试跑 Release**（`workflow_dispatch` + `dry_run_release=true`）能不打包发布就把整条
+  release 构建走一遍 —— 这类"只有发版才暴露"的问题必须靠它提前发现。
+
 ---
 
 ## 2. WebView 运行时（最容易出"空白屏"）

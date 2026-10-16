@@ -230,6 +230,7 @@ git tag v0.2.0 && git push origin v0.2.0
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | `SDK location not found` | 缺 `local.properties` 或 `ANDROID_HOME` | 本地指 Android SDK；CI 用 `android-actions/setup-android` |
+| `SigningConfig "release" is missing required property "keyPassword"`（打包阶段） | `build.gradle.kts` 签名配置里的**自赋值**（`keyPassword = keyPassword` 两侧都解析成接收者属性） | 见 [PITFALLS.md](PITFALLS.md) §1.9 与 [FIX-20261017](FIX-20261017-SIGNING-SELF-ASSIGN.md)；变量名带 `env` 前缀 + 显式 `this.` |
 | `Unsupported class file major version` | JDK 版本不对 | 用 JDK 17 |
 | App 里白屏但浏览器正常 | WebView 版本旧 / 入口 HTML 被缓存 | 看 `chrome://inspect` 控制台；调 manifest `forceRefreshEntry` |
 | 升级安装失败（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`） | 签名不一致 | 确认用了同一 keystore；用户需卸载重装 |

@@ -98,6 +98,30 @@ PKCS12 是密钥库的现代标准格式，且被 Android Studio / Gradle / keyt
 > 说明：本地没有 Android SDK，Gradle 编译与 release 打包仍由 CI 完成；
 > 本块只改文本与 shell，未触碰 Kotlin。
 
+### 4.1 补记：首个 tag 红了，以及它是怎么被修掉的（2026-10-17）
+
+推 tag `v0.1.0` 后 `release` 作业在第 12 步失败：
+
+```
+NullPointerException: SigningConfig "release" is missing required property "keyPassword"
+```
+
+前 11 步（含 keystore 指纹闸门）全绿 —— 说明密钥与 Secrets 都没问题，问题在 Gradle 脚本。
+根因是 `app/build.gradle.kts` 里 `keyAlias = keyAlias` / `keyPassword = keyPassword` 的**自赋值**
+（带接收者的 lambda 里两侧都解析成接收者自身的属性），已用 `kotlinc` 最小复现证实，
+修复与复盘见 [FIX-20261017-SIGNING-SELF-ASSIGN.md](../FIX-20261017-SIGNING-SELF-ASSIGN.md)。
+
+顺带补上了这块最根本的短板：**以前 release 构建只能用 tag 去试**，现在有了「试跑 Release」
+（`workflow_dispatch` + `dry_run_release=true`，完整构建但不发 Release）。
+修复后的试跑（run 38934792986）结果：
+
+| 步骤 | 结果 |
+|---|---|
+| 11 校验签名指纹 | ✅ |
+| 12 构建 release APK | ✅ |
+| 14 校验产物签名证书（apksigner） | ✅ |
+| 16 创建 GitHub Release | ⏭ skipped（试跑模式按设计不发版） |
+
 ---
 
 ## 5. 收尾待办（区块 7 剩余部分）
