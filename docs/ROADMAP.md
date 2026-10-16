@@ -189,10 +189,16 @@
 - ✅ `release` 作业再加一道**产物**校验：构建后用 `apksigner verify --print-certs` 断言
   `app-release.apk` 的签名证书 = 登记值（验的是包本身，不只是钥匙；本地无 SDK，这道只能在 CI 做）；
 - ✅ 本地已做正向 + 4 组反向注入验证（换钥 / 口令错 / 别名错 / 登记损坏均被拦，口令从不打印），
-  并对新增的预检规则做了反向注入（删掉 apksigner 校验后规则确实报错）。
+  并对新增的预检规则做了反向注入（删掉 apksigner 校验后规则确实报错）；
+- ⚠️ **首次 tag `v0.1.0` 在 `assembleRelease` 失败**（签名配置自赋值，与密钥无关），
+  根因与修复见 [FIX-20261017](FIX-20261017-SIGNING-SELF-ASSIGN.md)，
+  同时新增**试跑 Release**（`workflow_dispatch` + `dry_run_release=true`），
+  修好后试跑已全绿（run 38934792986：keystore 闸门 ✅ / 构建 ✅ / 产物 apksigner ✅ / 不发 Release ⏭）。
 
 **未完成（本块收尾）**
-- ⏳ 触发一次真实 Release（`version.properties` 现为 `versionCode=1 / versionName=0.1.0`，已有 tag 前提）；
+- ⏳ 合并签名配置自赋值的修复（`fix/07-release-signing-config`，见 [FIX-20261017](FIX-20261017-SIGNING-SELF-ASSIGN.md)），
+  再把 tag `v0.1.0` 指向修复后的 main（首次那个 tag 没有产出任何 Release，可安全重打）；
+- ⏳ 真正发一次 Release（`version.properties` 为 `versionCode=1 / versionName=0.1.0`，tag 需与之一致）；
 - ⏳ 用 `apksigner verify` 核对 Release 产物，并按验收标准做一次**覆盖安装**实测
   （正式版与 debug 包是不同 `applicationId`，不冲突）；
 - ⏳ 把 APK 同步到自托管分发目录 `/opt/club/app-update/`（`scripts/publish-apk.sh`）

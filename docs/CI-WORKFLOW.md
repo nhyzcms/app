@@ -152,7 +152,24 @@ Step Summary 会打印登记的别名、指纹与有效期。
 > `gh secret list --repo nhyzcms/app` 只能确认 4 个 Secret **存在**；
 > 「内容对不对」只有 `verify-signing` 能回答（Secret 值写入后无法读回，这是设计）。
 
-### 5.3 另外两条硬约束
+### 5.3 试跑 Release（`dry_run_release`）—— 别再用 tag 去试
+
+`release` 作业原本**只在 tag 上跑**，于是“只有发版才暴露”的问题只能靠发版去试。
+2026-10-17 首个 tag `v0.1.0` 就是这么红的（Gradle 签名配置自赋值，见
+[FIX-20261017](FIX-20261017-SIGNING-SELF-ASSIGN.md)）。现在可以试跑：
+
+```bash
+gh workflow run android.yml --repo nhyzcms/app --ref <分支或 main> -f dry_run_release=true
+```
+
+试跑会完整走一遍 release 路径（预检 → 单测 → keystore 指纹闸门 → `assembleRelease` →
+产物 `apksigner` 校验 → 上传 artifact），只**跳过「创建 GitHub Release」**；
+非 tag 时会跳过 tag 与 `versionName` 的一致性校验（按 `version.properties` 构建）。
+
+> 什么时候用：改动了 `app/build.gradle.kts`、`proguard-rules.pro`、依赖版本、
+> 签名相关脚本之后，打 tag 之前先跑一次。约 4~6 分钟，比"红一个 tag"便宜得多。
+
+### 5.4 另外两条硬约束
 
 - tag 必须与 `version.properties` 的 `versionName` 一致（工作流会校验，不一致直接报错）；
 - 更新机制会比对 APK 的签名证书（见 `docs/UPDATE-STRATEGY.md`），
@@ -314,8 +331,10 @@ gh api repos/nhyzcms/app/issues/<PR_NUMBER>/comments --jq '.[-1].body'
   本地等价验证链、推送纪律、Release→部署衔接、常用命令。
   同时澄清：早期因"单次写入/推送载荷约 1 万字符"而采用的临时通道**已作废**（见 [ENGINEERING-ENV.md](ENGINEERING-ENV.md) §1）。
 - **2026-10-17（区块 7）**：4 个签名 Secrets 配置完成；`release` 作业加**签名指纹闸门**
-  （`scripts/verify-keystore.sh` ↔ `deploy/signing-fingerprint.txt`）；
-  新增手动触发的 `verify-signing` 作业（不发包，专门验证 Secrets）；
-  新增静态预检 `scripts/preflight-signing.sh`（由 `preflight-feel.sh` 连带执行）。详见 §5。
+  （`scripts/verify-keystore.sh` ↔ `deploy/signing-fingerprint.txt`）与**产物签名校验**（`apksigner`）；
+  新增手动触发的 `verify-signing` 作业（不发包，专验 Secrets）；
+  新增静态预检 `scripts/preflight-signing.sh`（由 `preflight-feel.sh` 连带执行）；
+  新增 `workflow_dispatch` 输入 **`dry_run_release`（试跑 Release，不发 Release）** —— 详见 §5。
+  同日首个 tag `v0.1.0` 因签名配置自赋值失败，修复见 [FIX-20261017](FIX-20261017-SIGNING-SELF-ASSIGN.md)。
 
 <!-- EOF-SENTINEL-CI-WORKFLOW-20261017 -->

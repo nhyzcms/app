@@ -131,6 +131,28 @@ if bad:
 PY
 ) || err "疑似明文口令入库：$out"
 
+# ── 7. 签名配置里禁止「自己赋给自己」──────────────────────────────────────────
+#    2026-10-17 首个 Release（tag v0.1.0）构建失败的真因：
+#    `keyPassword = keyPassword` 在带接收者的 lambda 里两侧都解析成接收者自身的属性，
+#    等于没赋值 → 打包时 NullPointerException（missing required property）。
+#    这类错误静态看很像正常代码，只有真跑 assembleRelease 才会暴露，必须机器来记。
+out=$(python3 - 2>&1 <<'PY'
+import glob, re, sys
+bad = []
+for path in sorted(set(glob.glob("*.gradle.kts") + glob.glob("app/*.gradle.kts") + glob.glob("buildSrc/**/*.kts", recursive=True))):
+    try:
+        lines = open(path, encoding="utf-8").read().splitlines()
+    except OSError:
+        continue
+    for i, line in enumerate(lines, 1):
+        m = re.match(r"^\s*(storeFile|storePassword|keyAlias|keyPassword)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*$", line)
+        if m and m.group(1) == m.group(2):
+            bad.append(f"{path}:{i}: 自赋值（自己赋给自己，值仍是 null）：{line.strip()}")
+if bad:
+    sys.exit("\n      ".join(bad))
+PY
+) || err "签名配置疑似自赋值：$out"
+
 # ── 结果 ─────────────────────────────────────────────────────────────────────
 if [ "$fail" -eq 0 ]; then
   echo "[预检-signing] 全部通过 ✅"

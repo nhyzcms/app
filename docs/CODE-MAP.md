@@ -231,6 +231,7 @@
   资源与脚本，并给出"改 X 动哪里"的索引表与文档地图。
 - **2026-10-17（区块 7）**：新增 `deploy/signing-fingerprint.txt`（签名指纹登记，CI 的唯一真源）、
   `scripts/verify-keystore.sh`（发版闸门）、`scripts/preflight-signing.sh`（签名层静态规则）；
-  工作流新增 `verify-signing` 作业（手动触发，不发包）。
+  工作流新增 `verify-signing` 作业与 `dry_run_release` 试跑输入；
+  修复 `app/build.gradle.kts` 签名配置自赋值（见 [FIX-20261017](FIX-20261017-SIGNING-SELF-ASSIGN.md)）。
 
 <!-- EOF-SENTINEL-CODE-MAP-20261017 -->

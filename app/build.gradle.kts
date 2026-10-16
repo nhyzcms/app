@@ -19,14 +19,16 @@ val appVersionName = (System.getenv("VERSION_NAME")
 // ── 签名 ──────────────────────────────────────────────────────────────────
 // 只有 CI 注入了 keystore 才配置 release 签名。
 // 未配置时 assembleRelease 会直接报错退出，**不会**产出一个装不上的未签名包。
-val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
-val keystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-val keyAlias = System.getenv("ANDROID_KEY_ALIAS")
-val keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
-val hasReleaseSigning = !keystorePath.isNullOrBlank() &&
-    !keystorePassword.isNullOrBlank() &&
-    !keyAlias.isNullOrBlank() &&
-    !keyPassword.isNullOrBlank()
+// ⚠️ 变量名一律带 env 前缀，**绝不能**叫 keyAlias / keyPassword：
+// 与下面 signingConfigs 里接收者的属性同名会导致赋值解析错误（详见那段注释）。
+val envKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+val envKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+val envKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+val envKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+val hasReleaseSigning = !envKeystorePath.isNullOrBlank() &&
+    !envKeystorePassword.isNullOrBlank() &&
+    !envKeyAlias.isNullOrBlank() &&
+    !envKeyPassword.isNullOrBlank()
 
 android {
     namespace = "com.nhyzcms.clubapp"
@@ -46,10 +48,20 @@ android {
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {
-                storeFile = file(keystorePath!!)
-                storePassword = keystorePassword
-                keyAlias = keyAlias
-                keyPassword = keyPassword
+                // ⚠️ 这里必须写 `this.xxx = ...`，而且右边**不能**是同名的脚本属性。
+                //
+                // 2026-10-17 首个 Release（tag v0.1.0）就死在这上面：
+                // 在“带接收者的 lambda”里，裸写的名字会优先解析成**接收者自己的属性**，
+                // 于是 `keyPassword = keyPassword` 变成自己赋给自己，值仍是 null；
+                // 构建一直到给 APK 签名那一步才报
+                //   NullPointerException: SigningConfig "release" is missing required property "keyPassword"。
+                // 更隐蔽的是 `storePassword = keystorePassword`（右边名字不同）恰好正常，
+                // 于是现象变成“静态预检过、指纹校验过、单测过，最后打包才失败”。
+                // 本地复现：kotlinc + 同名 stub（见 docs/PITFALLS.md §签名配置自赋值）。
+                this.storeFile = file(envKeystorePath!!)
+                this.storePassword = envKeystorePassword
+                this.keyAlias = envKeyAlias
+                this.keyPassword = envKeyPassword
             }
         }
     }
