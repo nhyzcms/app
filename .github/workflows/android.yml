@@ -3,7 +3,10 @@ name: Android
 # 触发策略：
 #   * 任意分支 push / PR → 静态预检 → 纯逻辑单测 → 建 debug APK
 #   * 推 tag vX.Y.Z      → 静态预检 → 单测 → 建签名 release APK 并自动创建 GitHub Release
-#   * 手动 workflow_dispatch 便于重跑
+#   * 手动 workflow_dispatch → 默认只跑 debug + 签名自检；
+#                            勾选 dry_run_release 则额外**完整走一遍 release 构建**（含两道签名闸门），
+#                            但不创建 GitHub Release —— 用来在打 tag 之前就发现"打包才发现"的错误
+#                            （2026-10-17 首个 tag 就是这么红过一次的：签名配置自赋值）
 #
 # 【为何失败时要贴日志到 PR 评论】
 #   Actions 的原始日志需要仓库管理员权限才能通过 API 读取，
@@ -35,6 +38,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      dry_run_release:
+        description: "试跑 Release 构建（走完整发版流程但不创建 GitHub Release；会读取签名 Secrets）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write       # 创建 Release
@@ -187,7 +195,8 @@ jobs:
 
   release:
     name: Release APK
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    # 两条入口：① 推 tag vX.Y.Z（正式发版）；② 手动触发时勾选 dry_run_release（试跑，不发 Release）
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.dry_run_release) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -216,12 +225,17 @@ jobs:
       # —— 版本号：tag 覆盖 versionName，versionCode 仍以 version.properties 为准 ——
       - name: 校验 tag 与 version.properties 一致
         run: |
-          tag="${GITHUB_REF_NAME#v}"
           file=$(grep -E '^versionName=' version.properties | cut -d= -f2 | tr -d ' \r')
-          echo "tag=$tag  version.properties:versionName=$file"
-          if [ "$tag" != "$file" ]; then
-            echo "::error::tag v$tag 与 version.properties 的 versionName=$file 不一致；请先 bump 版本号再打 tag"
-            exit 1
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            echo "tag=$tag  version.properties:versionName=$file"
+            if [ "$tag" != "$file" ]; then
+              echo "::error::tag v$tag 与 version.properties 的 versionName=$file 不一致；请先 bump 版本号再打 tag"
+              exit 1
+            fi
+          else
+            tag="$file"
+            echo "（试跑模式：非 tag 触发，跳过 tag 一致性校验，按 version.properties 的 $tag 构建）"
           fi
           echo "VERSION_NAME=$tag" >> "$GITHUB_ENV"
 
@@ -318,6 +332,8 @@ jobs:
           retention-days: 90
 
       - name: 创建 GitHub Release
+        # 试跑模式不发 Release（只校验能不能构建出可发布的包）
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         uses: softprops/action-gh-release@v2
         with:
           files: |
