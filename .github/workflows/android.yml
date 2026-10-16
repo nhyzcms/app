@@ -290,6 +290,26 @@ jobs:
           sha256sum app-release.apk | tee app-release.apk.sha256
           ls -lh
 
+      - name: 校验产物签名证书（apksigner —— 验的是 APK 本身，比只验 keystore 更硬）
+        run: |
+          set -o pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          [ -n "$SDK" ] || { echo "::error::找不到 ANDROID_SDK_ROOT/ANDROID_HOME"; exit 1; }
+          BT="$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -1 || true)"
+          [ -n "$BT" ] || { echo "::error::SDK 里没有 build-tools（apksigner 在其中）"; exit 1; }
+          echo "build-tools: $BT"
+          "$BT/apksigner" verify --verbose --print-certs out/app-release.apk 2>&1 | tee apksigner.log
+          # apksigner 打印的是不带冒号的小写十六进制；登记文件是带冒号的大写。
+          norm() { printf '%s' "$1" | tr -d ':' | tr -d ' \r' | tr 'a-f' 'A-F'; }
+          ACTUAL="$(grep -m1 -E 'certificate SHA-256 digest' apksigner.log | sed 's/.*digest:[[:space:]]*//')"
+          EXPECTED="$(grep -E '^CERT_SHA256=' deploy/signing-fingerprint.txt | cut -d= -f2-)"
+          [ -n "$ACTUAL" ] || { echo "::error::apksigner 没有打印证书摘要，无法确认产物签名"; exit 1; }
+          if [ "$(norm "$ACTUAL")" != "$(norm "$EXPECTED")" ]; then
+            echo "::error::产物签名证书与登记值不一致：actual=$ACTUAL expected=$EXPECTED"
+            exit 1
+          fi
+          echo "产物签名证书与登记值一致 ✅  $ACTUAL"
+
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:

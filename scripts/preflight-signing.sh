@@ -73,6 +73,9 @@ fi
 if [ -f "$WORKFLOW" ]; then
   grep -q 'scripts/verify-keystore.sh' "$WORKFLOW" \
     || err "$WORKFLOW 里没有调用 scripts/verify-keystore.sh：签名指纹闸门被拿掉了（用错密钥发版 = 用户装不上）"
+  if ! grep -q 'apksigner' "$WORKFLOW" || ! grep -q 'print-certs' "$WORKFLOW"; then
+    err "$WORKFLOW 里没有 apksigner 校验：那道闸门验的是「keystore 对不对」，这道验的是「产物本身是不是这把密钥签的」，不能删"
+  fi
 fi
 
 # ── 4. 4 个 Secrets 的**名字**必须一字不差 ────────────────────────────────────

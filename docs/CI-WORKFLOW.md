@@ -120,17 +120,21 @@ printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$SDK/licenses/android-sdk
 | `ANDROID_KEY_ALIAS` | `clubapp` |
 | `ANDROID_KEY_PASSWORD` | key 口令（PKCS12 下与 store 口令相同） |
 
-### 5.1 两道发版闸门
+### 5.1 三道发版闸门
 
-`release` 作业在 `assembleRelease` 之前会依次卡两道：
+`release` 作业依次卡三道，任一不过就不发包：
 
 1. **Secrets 齐备**：解码 `ANDROID_KEYSTORE_BASE64` 前先判空，缺了直接 `exit 1`；
-2. **指纹一致**：`scripts/verify-keystore.sh` 断言解码出来的证书 SHA-256 指纹
-   等于 `deploy/signing-fingerprint.txt` 的登记值（并校验 alias 与证书未过期）。
+2. **构建前 · 指纹一致**：`scripts/verify-keystore.sh` 断言解码出来的证书 SHA-256 指纹
+   等于 `deploy/signing-fingerprint.txt` 的登记值（并校验 alias 与证书未过期）；
+3. **构建后 · 产物一致**：`apksigner verify --print-certs` 校验打出来的
+   `app-release.apk` 的签名证书等于登记值 —— 第 2 道验的是"钥匙对不对"，
+   第 3 道验的是"这个包确实是那把钥匙签的"（本地没有 Android SDK，这一道只能在 CI 做）。
 
-第 2 道防的是**用错密钥发版**：那种包构建一样成功、Release 一样发出，
+第 2、3 道防的是**用错密钥发版**：那种包构建一样成功、Release 一样发出，
 但已装用户会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，而且一旦有人装了新包，
-退回旧密钥也覆盖不了 —— 几乎不可回滚。把比对前置到构建之前，就把它挡在源头。
+退回旧密钥也覆盖不了 —— 几乎不可回滚。把比对前置到构建之前、并在构建之后再验一次产物，
+就把它挡在源头、也挡在出口。
 
 ### 5.2 手动触发的 `verify-signing` 作业
 

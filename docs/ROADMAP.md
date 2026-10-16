@@ -186,7 +186,10 @@
 - ✅ 新增**手动触发的 `verify-signing` 作业**：不发包，专门回答"Secrets 配对了没"（交接/体检用）；
 - ✅ 新增静态预检 `scripts/preflight-signing.sh`：拦"登记文件被改坏 / 闸门被删 / Secret 名写错 /
   口令被 echo 进日志 / 明文口令入库"，由 `preflight-feel.sh` 连带执行；
-- ✅ 本地已做正向 + 4 组反向注入验证（换钥 / 口令错 / 别名错 / 登记损坏均被拦，口令从不打印）。
+- ✅ `release` 作业再加一道**产物**校验：构建后用 `apksigner verify --print-certs` 断言
+  `app-release.apk` 的签名证书 = 登记值（验的是包本身，不只是钥匙；本地无 SDK，这道只能在 CI 做）；
+- ✅ 本地已做正向 + 4 组反向注入验证（换钥 / 口令错 / 别名错 / 登记损坏均被拦，口令从不打印），
+  并对新增的预检规则做了反向注入（删掉 apksigner 校验后规则确实报错）。
 
 **未完成（本块收尾）**
 - ⏳ 触发一次真实 Release（`version.properties` 现为 `versionCode=1 / versionName=0.1.0`，已有 tag 前提）；

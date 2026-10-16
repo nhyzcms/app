@@ -176,9 +176,13 @@ keytool -genkeypair -v \
 | **手动触发** `workflow_dispatch` | `verify-signing` | 不发包：只验证 Secrets 能解出登记在册的那把 keystore |
 | push tag `vX.Y.Z` | `release` | 签名 APK + SHA-256 写入 GitHub Release |
 
-`release` 作业在构建前有两道闸门，任一不过就直接失败、不发包：
-① 4 个 Secrets 齐备；② `scripts/verify-keystore.sh` 比对出的证书指纹
-与 `deploy/signing-fingerprint.txt` 一致。
+`release` 作业有三道闸门，任一不过就直接失败、不发包：
+
+1. 4 个 Secrets 齐备；
+2. **构建前**：`scripts/verify-keystore.sh` 比对解码出的 keystore 证书指纹
+   与 `deploy/signing-fingerprint.txt` 登记值一致；
+3. **构建后**：`apksigner verify --print-certs` 校验**产物 APK 本身**的签名证书
+   等于登记值（验的是包，不只是钥匙；本地无 SDK，这一道只能在 CI 做）。
 
 版本号来源优先级：`GITHUB_REF` 的 tag（仅在发版时）> `version.properties`。
 

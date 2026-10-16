@@ -28,7 +28,7 @@
 | `deploy/signing-fingerprint.txt` | 发布证书指纹登记（`KEY_ALIAS` / `CERT_SHA256` / `CERT_SHA1` / `DN` / `ALGORITHM` / 有效期）。**公开信息，刻意入库**，是 CI 与文档的唯一真源 |
 | `scripts/verify-keystore.sh` | **发版闸门**：读 `ANDROID_KEYSTORE_PATH`（或 `ANDROID_KEYSTORE_BASE64`）+ 口令，比对证书 SHA-256 指纹、alias 一致性、证书有效期；从不打印口令 |
 | `scripts/preflight-signing.sh` | 静态预检：登记文件格式、`.gitignore` 屏蔽 `*.jks/*.keystore`、仓库无密钥文件、闸门脚本未被删、4 个 Secret 名字齐全、口令不得被 `echo` 进日志、脚本里不得出现明文口令 |
-| `.github/workflows/android.yml` | ① `release` 作业新增"校验签名指纹"步骤（构建前阻断）；② 新增 `verify-signing` 作业（手动触发，不发包，只验证 Secrets） |
+| `.github/workflows/android.yml` | ① `release` 作业新增"校验签名指纹"步骤（构建前阻断）；② 新增"校验产物签名证书"步骤（构建后用 `apksigner` 验产物本身）；③ 新增 `verify-signing` 作业（手动触发，不发包，只验证 Secrets） |
 | 文档 | `docs/BUILD.md` §3 重写为手册（现状速查 / 配 Secrets / 自检 / 轮换 / 备份 / 原始命令）、`docs/SECURITY.md` §5、`docs/CI-WORKFLOW.md` §1 §5 §13、`docs/CODE-MAP.md` §9 §10 §12、`docs/ROADMAP.md` 区块 7、`README.md` 状态表 |
 
 密钥本体（`nhyzcms-release.jks`，PKCS12，4096-bit RSA，alias `clubapp`，2026-10-16 → 2056-10-08 有效）
@@ -109,7 +109,9 @@ PKCS12 是密钥库的现代标准格式，且被 Android Studio / Gradle / keyt
    ```
 3. `version.properties` 当前是 `versionCode=1 / versionName=0.1.0`；
    发首个 Release 只需在 main 上打 tag `v0.1.0`（tag 必须等于 `versionName`，CI 会校验）。
-4. 用 `apksigner verify --print-certs` 核对 Release 产物的指纹 = 登记值。
+4. 用 `apksigner verify --print-certs` 核对 Release 产物的指纹 = 登记值
+   —— **CI 的 `release` 作业已经自动做了这步**（构建后、上传产物前），失败即拒绝发布；
+   人工只需复核 Release Notes 与 `out/app-release.apk.sha256`。
 5. 做一次**覆盖安装**实测：正式版与 debug 包 `applicationId` 不同（`.debug` 后缀），
    两者可共存，不冲突；真正要验的是"正式版装第二次能覆盖"。
 6. 把 APK 同步到自托管目录，让老用户走 L2 升级：

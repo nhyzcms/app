@@ -119,6 +119,8 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 1. **构建前**：`scripts/verify-keystore.sh` 解码 `ANDROID_KEYSTORE_BASE64`，
    比对证书 SHA-256 指纹是否等于 `deploy/signing-fingerprint.txt` 的登记值；
    顺带校验 alias 一致与证书未过期。不一致 → 拒绝发版（`release` 作业直接失败）。
+2. **构建后**：`apksigner verify --print-certs` 校验产物 APK 自身的签名证书等于登记值
+   （第 1 道验"钥匙对不对"，这一道验"这个包确实是那把钥匙签的"；本地无 SDK，只能在 CI 做）。
 2. **静态**：`scripts/preflight-signing.sh`（由 `preflight-feel.sh` 连带执行，PR 上就会跑）——
    拦「登记文件被改坏 / 闸门脚本被删 / Secret 名字写错 / 把口令 echo 进日志 / 明文口令入库」。
 3. **安装前（客户端）**：壳下载更新包后校验 sha256（`ApkDigest`）**并**比对新包与本机已装版本的
