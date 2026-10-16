@@ -170,9 +170,33 @@
 ## 区块 7 — 签名与首个 Release
 
 - **目标**：产出可对外分发的正式 APK。
-- **交付物**：keystore 生成与备份说明（用户自行执行，不入库）、GitHub Secrets 配置步骤、`release` 工作流跑通、Release 页面（APK + sha256 + 更新说明）、自托管镜像同步步骤。
+- **交付物**：keystore 生成与备份说明（不入库）、GitHub Secrets 配置步骤、`release` 工作流跑通、Release 页面（APK + sha256 + 更新说明）、自托管镜像同步步骤。
 - **验收**：下载 Release 的 APK 安装后能覆盖旧版安装（签名一致）；`apksigner verify` 通过。
 - **❗ 关键**：keystore 丢失 = 以后所有版本无法覆盖安装，必须双人备份。
+
+### 进度（2026-10-17）
+
+**已完成**
+- ✅ 密钥已生成：`nhyzcms-release.jks`（PKCS12，4096-bit RSA，alias `clubapp`，有效期至 2056-10-08），
+  文件与凭据已交付管理员，并要求双份离线备份（云盘 + 离线介质，口令与文件分开存放）；
+- ✅ 4 个 Secrets 已写入仓库 `nhyzcms/app`：
+  `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`；
+- ✅ 新增**签名指纹闸门**：`deploy/signing-fingerprint.txt`（登记证书 SHA-256/SHA-1、DN、有效期，
+  公开信息刻意入库）+ `scripts/verify-keystore.sh`（`release` 作业构建前比对，不一致就拒绝发版）；
+- ✅ 新增**手动触发的 `verify-signing` 作业**：不发包，专门回答"Secrets 配对了没"（交接/体检用）；
+- ✅ 新增静态预检 `scripts/preflight-signing.sh`：拦"登记文件被改坏 / 闸门被删 / Secret 名写错 /
+  口令被 echo 进日志 / 明文口令入库"，由 `preflight-feel.sh` 连带执行；
+- ✅ 本地已做正向 + 4 组反向注入验证（换钥 / 口令错 / 别名错 / 登记损坏均被拦，口令从不打印）。
+
+**未完成（本块收尾）**
+- ⏳ 触发一次真实 Release（`version.properties` 现为 `versionCode=1 / versionName=0.1.0`，已有 tag 前提）；
+- ⏳ 用 `apksigner verify` 核对 Release 产物，并按验收标准做一次**覆盖安装**实测
+  （正式版与 debug 包是不同 `applicationId`，不冲突）；
+- ⏳ 把 APK 同步到自托管分发目录 `/opt/club/app-update/`（`scripts/publish-apk.sh`）
+  并更新 `manifest.json` 的 `latest` 字段，让老用户走 L2 升级路径；
+- ⏳ 服务器侧 `latest.apk` 目前是 404（还没发包），首发后需复核
+  `curl -sSI https://8.153.145.175/app-update/latest.apk` 返回 200。
+
 
 ---
 

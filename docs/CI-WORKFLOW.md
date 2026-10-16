@@ -10,7 +10,8 @@
 | 事件 | 作业 | 步骤顺序 | 产物 |
 |---|---|---|---|
 | 任意分支 push / PR / 手动触发 | `debug` | 预检 → 单测 → `assembleDebug` | `app-debug-apk`（artifact，保留 14 天） |
-| 推 tag `vX.Y.Z` | `release` | 预检 → 单测 → `assembleRelease`（读 Secrets 签名） | 签名 APK + `.sha256`（artifact 90 天）+ GitHub Release |
+| 推 tag `vX.Y.Z` | `release` | 预检 → 单测 → **签名闸门（Secrets 齐备 + 指纹一致）** → `assembleRelease` | 签名 APK + `.sha256`（artifact 90 天）+ GitHub Release |
+| 手动触发（非 tag） | `verify-signing` | 解码 Secrets → 比对证书指纹 | 不发包；只回答"Secrets 配对了没"（见 §5.2） |
 
 两个"先把关"的步骤，都是为了**不浪费构建周期**：
 
@@ -18,7 +19,8 @@
    Kotlin `R.*` 资源引用必须真实存在、权限声明形状、安全红线（禁 `addJavascriptInterface`、
    禁 `onReceivedSslError` 里 `proceed()` 等）。
 2. `bash scripts/preflight-feel.sh`：区块 4 起的专项预检，会**连带执行同目录下所有 `preflight-*.sh`**
-   （当前包含 `preflight-perf.sh`、`preflight-push.sh`），同样不需要 JDK/SDK。
+   （当前包含 `preflight-perf.sh`、`preflight-push.sh`、`preflight-signing.sh`），同样不需要 JDK/SDK。
+   → **新增专项预检只要命名成 `scripts/preflight-*.sh` 就会自动被 CI 跑到**，不必改工作流。
 3. `gradle :app:testDebugUnitTest`：区块 2 起的纯逻辑单测（不需要设备）。
    * `debug` 作业把单测放在 APK 之前：测试挂了就不必再花时间打包，反馈更快；
    * `release` 作业把单测当作**发版阻断**：测试不过就不发版。
@@ -105,20 +107,51 @@ printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$SDK/licenses/android-sdk
 
 ## 5. 权限、Secrets 与发版前置条件
 
-`release` 作业必须先配好 4 个 Secrets（见 [BUILD.md](BUILD.md) §3），否则它会**主动失败**。
+**状态（2026-10-17）：4 个 Secrets 已配置，指纹闸门已在工作流里。**
+首次配置 / 迁移 / 备份 / 轮换的完整流程见 [BUILD.md](BUILD.md) §3。
+
+`release` 作业必须先配好 4 个 Secrets，否则它会**主动失败**。
 这是故意的：**宁可失败，也不发出一个"装不上的未签名包"**。
 
 | Secret | 内容 |
 |---|---|
-| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 clubapp-release.jks` 的输出 |
+| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 nhyzcms-release.jks` 的输出（单行） |
 | `ANDROID_KEYSTORE_PASSWORD` | keystore 口令 |
 | `ANDROID_KEY_ALIAS` | `clubapp` |
-| `ANDROID_KEY_PASSWORD` | key 口令 |
+| `ANDROID_KEY_PASSWORD` | key 口令（PKCS12 下与 store 口令相同） |
 
-另外两条硬约束：
+### 5.1 两道发版闸门
+
+`release` 作业在 `assembleRelease` 之前会依次卡两道：
+
+1. **Secrets 齐备**：解码 `ANDROID_KEYSTORE_BASE64` 前先判空，缺了直接 `exit 1`；
+2. **指纹一致**：`scripts/verify-keystore.sh` 断言解码出来的证书 SHA-256 指纹
+   等于 `deploy/signing-fingerprint.txt` 的登记值（并校验 alias 与证书未过期）。
+
+第 2 道防的是**用错密钥发版**：那种包构建一样成功、Release 一样发出，
+但已装用户会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，而且一旦有人装了新包，
+退回旧密钥也覆盖不了 —— 几乎不可回滚。把比对前置到构建之前，就把它挡在源头。
+
+### 5.2 手动触发的 `verify-signing` 作业
+
+`workflow_dispatch`（且不是 tag）会额外跑一个 `verify-signing` 作业：
+只做「解码 Secrets → 比对指纹」，**不构建、不发包**，约 20 秒。
+
+```bash
+gh workflow run android.yml --repo nhyzcms/app --ref main
+gh run list --repo nhyzcms/app --limit 3
+```
+
+用途：① 首次配完 Secrets 的验证；② 每次发版前的 30 秒体检；③ 换人维护时的交接自检。
+Step Summary 会打印登记的别名、指纹与有效期。
+
+> `gh secret list --repo nhyzcms/app` 只能确认 4 个 Secret **存在**；
+> 「内容对不对」只有 `verify-signing` 能回答（Secret 值写入后无法读回，这是设计）。
+
+### 5.3 另外两条硬约束
 
 - tag 必须与 `version.properties` 的 `versionName` 一致（工作流会校验，不一致直接报错）；
-- 签名一致性校验：更新机制会比对 APK 的签名证书（见 `docs/UPDATE-STRATEGY.md`），
+- 更新机制会比对 APK 的签名证书（见 `docs/UPDATE-STRATEGY.md`），
   所以**发布包必须始终用同一把 release key**，否则老用户升不上去。
 
 > 关于"写入 `.github/workflows/**` 需要 token 具备 `workflow` 权限"这件事的沿革见 §6 第 1 条。
@@ -276,5 +309,9 @@ gh api repos/nhyzcms/app/issues/<PR_NUMBER>/comments --jq '.[-1].body'
 - **2026-10-14**：扩写为完整手册：补作业逐步拆解、SDK 准备脚本的做法、失败分类与处置表、
   本地等价验证链、推送纪律、Release→部署衔接、常用命令。
   同时澄清：早期因"单次写入/推送载荷约 1 万字符"而采用的临时通道**已作废**（见 [ENGINEERING-ENV.md](ENGINEERING-ENV.md) §1）。
+- **2026-10-17（区块 7）**：4 个签名 Secrets 配置完成；`release` 作业加**签名指纹闸门**
+  （`scripts/verify-keystore.sh` ↔ `deploy/signing-fingerprint.txt`）；
+  新增手动触发的 `verify-signing` 作业（不发包，专门验证 Secrets）；
+  新增静态预检 `scripts/preflight-signing.sh`（由 `preflight-feel.sh` 连带执行）。详见 §5。
 
-<!-- EOF-SENTINEL-CI-WORKFLOW-20261014 -->
+<!-- EOF-SENTINEL-CI-WORKFLOW-20261017 -->

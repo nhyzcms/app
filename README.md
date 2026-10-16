@@ -198,7 +198,9 @@ gradle :app:testDebugUnitTest
 - 壳侧**只拦白名单里的"不必要"资源**（区块 6：`/static/live2d/` 的看板娘素材约 60 MB，
   拦截后返回空体 200）；**主文档永不拦截**，白名单唯一真源在 `AppConfig.BLOCKED_ASSET_PREFIXES`，
   清单开关 `blockLive2dAssets` 可远程关闭；
-- 密钥永不入库：keystore 只存在于 GitHub Secrets（base64）；
+- 密钥永不入库：keystore 只存在于 GitHub Secrets（base64）与管理员离线备份；
+  **公开发布证书指纹**登记在 `deploy/signing-fingerprint.txt`，CI 发版前会比对
+  （防"用错密钥发版"这种构建成功但用户装不上的事故，见 [BUILD.md](docs/BUILD.md) §3）；
 - Release 构建关闭 WebView 远程调试（`BuildConfig.DEBUG` 才开）。
 
 ## 7. 项目状态
@@ -211,7 +213,7 @@ gradle :app:testDebugUnitTest
 | 4 | 原生手感：沉浸式配色、启动页、骨架屏、下拉刷新、手势返回、返回顶部 | ✅ 已完成，真机验收通过 2026-10-12（[报告](docs/chunks/CHUNK-04-REPORT.md)） |
 | 5 | 站内消息与角标（前台 WSS / 静音通知驱动角标 / 点通知直达会话） | 🟡 代码就绪（PR #16 已合并 2026-10-13），待真机验收（[报告](docs/chunks/CHUNK-05-REPORT.md)｜[跨仓库契约](docs/PUSH-CONTRACT.md)） |
 | 6 | 弱网与性能（首屏看护去误报 / 探测降频 / Live2D 兜底拦截 / 低内存降级） | 🟡 代码就绪（2026-10-13，CI 绿），待真机验收（[报告](docs/chunks/CHUNK-06-REPORT.md)） |
-| 7 | 签名与首个 Release 发布 | ⏳ |
+| 7 | 签名与首个 Release 发布 | 🟡 密钥 + Secrets + 指纹闸门已就绪（2026-10-17），待打 tag 发首个 Release（[BUILD.md §3](docs/BUILD.md)｜[报告](docs/chunks/CHUNK-07-REPORT.md)） |
 | 8 | 网站侧配套（App 模式 UI 覆盖全部功能 + manifest 端点） | ⏳（已挂入网站侧不注入 live2d + 大图懒加载，见 ROADMAP） |
 | 9 | 测试与验收（手测清单 / 回归流程 / E2E） | ⏳ |
 | 10 | 长期维护手册与交接 | ⏳ |
