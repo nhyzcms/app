@@ -1,0 +1,21 @@
+# 发布签名证书指纹 —— 公开信息，刻意入库，作为 CI 与文档的唯一真源。
+#
+# 为什么要有这个文件：
+#   签名是更新路径的信任根。若某次发版用错了 keystore（Secrets 被误改、
+#   误传成别人的包、本地手抖换了一把钥匙），构建照样能成功、Release 照样能发出，
+#   但已装用户会看到「签名不一致，无法安装」——问题要到用户装不上那一刻才暴露。
+#   所以把指纹前置到构建之前比对：release 构建前 CI 会解码 ANDROID_KEYSTORE_BASE64，
+#   用 scripts/verify-keystore.sh 断言「就是下面这一把」，否则直接失败。
+#
+# 这个文件里**没有任何秘密**：证书指纹本来就在每个 APK 的签名块里，人人可见。
+# 不要往这里写 keystore 口令，也不要写 keystore 文件的路径。
+#
+# 只在轮换密钥时才修改本文件（流程见 docs/BUILD.md §3.4）。
+
+KEY_ALIAS=clubapp
+CERT_SHA256=EF:D9:A5:CC:F9:BB:C2:35:63:9F:D9:CE:6E:4C:FF:63:19:E6:49:5E:B4:0F:EA:92:6F:D3:C1:D0:A9:1F:3C:A2
+CERT_SHA1=17:C0:AE:2A:36:66:FF:D4:1C:B7:52:E4:0C:FB:E1:C4:01:64:C4:2E
+DN=CN=Nanhui No.1 Middle School Media Club, OU=Club IT, O=nhyzcms, L=Shanghai, ST=Shanghai, C=CN
+ALGORITHM=SHA256withRSA / 4096-bit RSA
+GENERATED_AT=2026-10-17
+VALID_UNTIL=2056-10-08

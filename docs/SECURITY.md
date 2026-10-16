@@ -101,15 +101,39 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 
 ## 5. 密钥与签名
 
+**签名 = 更新路径的信任根**：装了本 App 的用户，只有「同一个签名证书」的包才能覆盖安装。
+这决定了密钥的保管要求与丢失代价。
+
+### 5.1 存放位置
+
 | 项 | 存放位置 | 入库？ |
 |---|---|---|
-| 发布 keystore（`.jks`） | 用户本地 + GitHub Secrets（base64） | ❌ |
-| keystore 口令 / alias / 口令 | GitHub Secrets | ❌ |
-| 站点密钥（`UPDATE_GITHUB_TOKEN`、DB 密码等） | 服务器 `.env` | ❌ 与 App 无关 |
+| 发布 keystore（`.jks`，PKCS12） | 管理员本地 + 私有云盘/离线备份 | ❌ 永不入库（`.gitignore` 已屏蔽 `*.jks` / `*.keystore`） |
+| keystore 口令 / key 口令 / alias | GitHub Secrets（`nhyzcms/app`，4 个）+ 管理员离线备份 | ❌ |
+| 发布证书指纹（SHA-256 / SHA-1、DN、有效期） | `deploy/signing-fingerprint.txt` | ✅ **刻意入库**：指纹本来就公开（在每个 APK 的签名块里），入库才能让 CI 自动比对 |
+| 站点侧密钥（`UPDATE_GITHUB_TOKEN`、DB 密码等） | 服务器 `.env` | ❌ 与本仓库无关 |
+| 备份凭据（口令 + 文件哈希） | 管理员离线介质，与 keystore **分开存放** | ❌ |
 
-**签名 = 更新路径的信任根**。两件事必须做到：
-1. keystore 丢失 → 用户必须卸载重装（丢登录态）；
-2. 更新前校验下载包签名与已装应用一致，**绝不安装签名不同的包**。
+### 5.2 三道闸门（都已在 CI 实施）
+
+1. **构建前**：`scripts/verify-keystore.sh` 解码 `ANDROID_KEYSTORE_BASE64`，
+   比对证书 SHA-256 指纹是否等于 `deploy/signing-fingerprint.txt` 的登记值；
+   顺带校验 alias 一致与证书未过期。不一致 → 拒绝发版（`release` 作业直接失败）。
+2. **构建后**：`apksigner verify --print-certs` 校验产物 APK 自身的签名证书等于登记值
+   （第 1 道验"钥匙对不对"，这一道验"这个包确实是那把钥匙签的"；本地无 SDK，只能在 CI 做）。
+2. **静态**：`scripts/preflight-signing.sh`（由 `preflight-feel.sh` 连带执行，PR 上就会跑）——
+   拦「登记文件被改坏 / 闸门脚本被删 / Secret 名字写错 / 把口令 echo 进日志 / 明文口令入库」。
+3. **安装前（客户端）**：壳下载更新包后校验 sha256（`ApkDigest`）**并**比对新包与本机已装版本的
+   签名证书（`SignatureCheck`），不同则拒绝安装 —— 这是纵深防御的最后一道，
+   即使服务器被投毒也装不上。
+
+### 5.3 两条必须遵守的纪律
+
+1. **keystore 丢失 = 从丢失那版起的用户都要卸载重装**（丢登录态与本地数据），
+   没有技术手段可绕开（签名一致性由 Android 系统强制）。因此必须有离线备份。
+2. **更新前必须校验签名一致，绝不安装签名不同的包**（已实现，勿删）。
+   轮换密钥的完整流程与代价见 [BUILD.md](BUILD.md) §3.4；日常运维**不要**轮换。
+
 
 ---
 

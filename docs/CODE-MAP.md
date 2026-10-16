@@ -173,12 +173,15 @@
 | `scripts/preflight-feel.sh` | 手感层预检，**连带执行同目录 `preflight-*.sh`** |
 | `scripts/preflight-push.sh` | 推送层规则（诊断必须走 `PushDiagnostics`、debug 限定、独立渠道…） |
 | `scripts/preflight-perf.sh` | 性能层规则（拦截白名单、主文档不拦…） |
+| `scripts/preflight-signing.sh` | 签名层规则（登记指纹格式、闸门未被删、Secret 名齐全、口令不得 echo/入库） |
 | `scripts/ci-prepare-android-sdk.sh` | CI 侧准备 SDK（直接写 licenses，绕过 `sdkmanager --licenses`） |
 | `scripts/ci-extract-errors.sh` | 从日志抽关键报错，贴成 PR 评论 |
+| `scripts/verify-keystore.sh` | **发版闸门**：比对 keystore 证书指纹 ↔ `deploy/signing-fingerprint.txt`（不发版也能手动跑） |
 | `scripts/publish-apk.sh` | 发布 APK 到服务器 `/app-update/`（自托管分发） |
 | `scripts/nginx-app-update.conf` | 服务器 nginx 片段（`/app-update/` 静态端点） |
-| `.github/workflows/android.yml` | 唯一工作流：`debug` / `release` 两个作业（见 `docs/CI-WORKFLOW.md`） |
+| `.github/workflows/android.yml` | 唯一工作流：`debug` / `release` / `verify-signing`（手动）三个作业（见 `docs/CI-WORKFLOW.md`） |
 | `deploy/app-update/` | 分发目录模板与说明（`manifest.json`、`README.md`） |
+| `deploy/signing-fingerprint.txt` | **发布签名证书指纹登记**（唯一真源；公开信息，刻意入库，供 CI 比对） |
 
 ---
 
@@ -198,6 +201,7 @@
 | 改图标/品牌色 | `res/values/colors.xml` + `res/drawable/ic_launcher_foreground.xml` |
 | 加一条预检规则 | 新建/追加 `scripts/preflight-<域>.sh`（会被 `preflight-feel.sh` 连带执行）+ 在 `docs/` 里记原因 |
 | 改 CI 步骤 | `.github/workflows/android.yml`（改完更新 `docs/CI-WORKFLOW.md`） |
+| 换发布签名密钥 / 加 Secrets | `deploy/signing-fingerprint.txt`（登记新指纹）+ 仓库 Secrets + `docs/BUILD.md` §3.4（**顺带必须发 Release 公告**，老用户要卸载重装） |
 
 ---
 
@@ -225,5 +229,8 @@
 
 - **2026-10-14**：初版。按"文件 → 职责 → 约束"整理全仓 57 个 main 源文件、27 个测试文件、
   资源与脚本，并给出"改 X 动哪里"的索引表与文档地图。
+- **2026-10-17（区块 7）**：新增 `deploy/signing-fingerprint.txt`（签名指纹登记，CI 的唯一真源）、
+  `scripts/verify-keystore.sh`（发版闸门）、`scripts/preflight-signing.sh`（签名层静态规则）；
+  工作流新增 `verify-signing` 作业（手动触发，不发包）。
 
-<!-- EOF-SENTINEL-CODE-MAP-20261014 -->
+<!-- EOF-SENTINEL-CODE-MAP-20261017 -->
