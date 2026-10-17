@@ -50,6 +50,15 @@ object AppConfig {
     const val SERVICE_CHANNEL_ID = "push_service"
 
     /**
+     * 「有声」的新私信渠道（2026-10-17 常驻后台补强）。
+     *
+     * 为什么不能沿用 NOTIFICATION_CHANNEL_ID：那条渠道在用户设备上已经建成了 IMPORTANCE_LOW，
+     * 而**渠道的重要性建好后改不了**（改代码也不会生效）。要让私信真的响一声，只能开新渠道。
+     * 站内通知仍走静音的 NOTIFICATION_CHANNEL_ID（不需要吵），私信走这里。
+     */
+    const val ALERT_CHANNEL_ID = "unread_alert"
+
+    /**
      * 调试自检通知的**独立渠道**（只有 debug 包会用）。
      * 与未读渠道分开是有意的：自检要能弹出来让人看见，而它**不能**污染角标语义。
      */

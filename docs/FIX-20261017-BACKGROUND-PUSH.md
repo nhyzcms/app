@@ -34,6 +34,18 @@
 - 服务通知走**独立渠道** `AppConfig.SERVICE_CHANNEL_ID`（`IMPORTANCE_MIN` + `setShowBadge(false)`），
   绝不复用「新消息」渠道 —— 否则 launcher 的数字角标会被这条常驻通知污染、永远清不掉。
 
+### 3.1.1 私信要「响一声」
+
+原来的未读通知是全静音的（`IMPORTANCE_LOW` + `setSilent(true)`），后台收到也只是静默躺在通知栏里，
+很容易被当成「没提醒」。因此：
+
+- 新增渠道 `AppConfig.ALERT_CHANNEL_ID`（`IMPORTANCE_DEFAULT`，响铃 + 振动 + 角标），
+  **只用于有未读私信时**；纯站内通知仍走静音渠道；
+- 不能直接改原渠道的重要性：Android 的渠道重要性**建好后不可变**，改代码不会生效，只能开新渠道；
+- `setOnlyAlertOnce(true)` + 固定通知 id：同一条未读通知只在第一次出现时响，之后继续更新数字与内容，
+  不会每来一条消息就打断一次；未读清零后通知被清掉，下一条才会再次响。
+- 用户嫌吵可在系统设置里把「新私信提醒」渠道调成静音，不影响能否收到。
+
 `PushHost.onActivityStopped` **只清 Activity 引用，不再停看门狗/连接**；退出登录或被挤号时才 `stopService`。
 
 ### 3.2 省电与权限

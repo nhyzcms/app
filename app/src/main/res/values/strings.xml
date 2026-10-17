@@ -123,6 +123,8 @@
     <string name="notif_mixed">%1$d 条未读私信、%2$d 条未读通知，点击查看</string>
 
     <!-- 区块 5 补强（2026-10-17）：常驻后台的前台服务通知 + 电池优化引导 -->
+    <string name="notif_alert_channel_name">新私信提醒</string>
+    <string name="notif_alert_channel_desc">收到新私信时响铃/振动，并显示未读数字角标（可在系统设置里改成静音）</string>
     <string name="notif_service_channel_name">消息提醒</string>
     <string name="notif_service_channel_desc">保持与服务器的连接，退到后台也能及时收到新私信和通知</string>
     <string name="notif_service_title">消息提醒已开启</string>

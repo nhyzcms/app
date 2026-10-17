@@ -52,6 +52,25 @@ class PushNotifications(private val context: Context) {
         channel.enableLights(false)
         channel.setSound(null, null)
         manager.createNotificationChannel(channel)
+        ensureAlertChannel(manager)
+    }
+
+    /**
+     * 「有声」的私信渠道（AppConfig.ALERT_CHANNEL_ID）。
+     *
+     * IMPORTANCE_DEFAULT：响铃 + 振动，允许角标；用户若嫌吵可以在系统设置里把它调成静音，
+     * 那时会退化成与未读渠道一样的「静默角标」，但**不影响**能否收到通知。
+     */
+    private fun ensureAlertChannel(manager: NotificationManager) {
+        if (manager.getNotificationChannel(AppConfig.ALERT_CHANNEL_ID) != null) return
+        val channel = NotificationChannel(
+            AppConfig.ALERT_CHANNEL_ID,
+            context.getString(R.string.notif_alert_channel_name),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        channel.description = context.getString(R.string.notif_alert_channel_desc)
+        channel.setShowBadge(true)
+        manager.createNotificationChannel(channel)
     }
 
     /** 能不能发通知（Android 13+ 看运行时权限）。 */
@@ -63,10 +82,15 @@ class PushNotifications(private val context: Context) {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    /** 发 / 更新未读通知（固定 id，更新同一条）。 */
-    fun show(count: Int, title: String, text: String, route: String) {
+    /**
+     * 发 / 更新未读通知（固定 id，更新同一条）。
+     *
+     * @param alert true = 新私信，走有声渠道（响铃/振动）；false = 站内通知，走静音渠道。
+     *              两者共用同一个通知 id —— 后到的会原地更新，不在通知栏堆一屏。
+     */
+    fun show(count: Int, title: String, text: String, route: String, alert: Boolean) {
         ensureChannel()
-        val notification = build(count, title, text, route)
+        val notification = build(count, title, text, route, alert)
         runCatching { NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification) }
     }
 
@@ -173,8 +197,15 @@ class PushNotifications(private val context: Context) {
         manager.createNotificationChannel(channel)
     }
 
-    private fun build(count: Int, title: String, text: String, route: String): Notification {
-        return NotificationCompat.Builder(context, AppConfig.NOTIFICATION_CHANNEL_ID)
+    private fun build(
+        count: Int,
+        title: String,
+        text: String,
+        route: String,
+        alert: Boolean,
+    ): Notification {
+        val channel = if (alert) AppConfig.ALERT_CHANNEL_ID else AppConfig.NOTIFICATION_CHANNEL_ID
+        return NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_stat_club)
             .setContentTitle(title)
             .setContentText(text)
@@ -182,9 +213,10 @@ class PushNotifications(private val context: Context) {
             .setContentIntent(contentIntent(route))
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(if (alert) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_LOW)
+            // 同一条通知只在**第一次**出现时响：之后继续更新数字/内容，但不反复打断。
             .setOnlyAlertOnce(true)
-            .setSilent(true)
+            .setSilent(!alert)
             .setLocalOnly(true)
             .build()
     }
