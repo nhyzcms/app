@@ -46,6 +46,9 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 | `ACCESS_NETWORK_STATE` | 网络可用性判断/错误提示 | — |
 | `CAMERA` | 拍照上传 | 仅在“将要提供拍照入口”时申请；拒了退化为只能选文件 |
 | `WRITE_EXTERNAL_STORAGE` | Android 8/9 把下载写进公共「下载」目录 | **`maxSdkVersion=28`**，且仅在下载时申请；拒了退 App 目录 |
+| `POST_NOTIFICATIONS` | 未读通知与 launcher 角标（区块 5） | Android 13+ 进 App 后申请一次；拒绝则不弹通知、不显示角标，网页内徽标照常（不伪装） |
+| `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_DATA_SYNC` | 登录后常驻前台服务，保活消息 WS 连接（2026-10-17） | 服务只连本站；退出登录 / 被挤号即停；常驻通知走独立渠道且不驱动角标 |
+| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | 引导用户允许「忽略电池优化」（Doze 会掐断长连接） | 只能拉起系统对话框，改不了设置；登录后只问一次，用户随时可撤回 |
 | `REQUEST_INSTALL_PACKAGES` | 安装自己下载的更新包（区块 3） | 不静默安装：仍需用户在系统里允许「安装未知应用」；包必须通过 sha256 + 签名校验（见 §5） |
 
 > **为什么不做证书固定（Certificate Pinning）**：
