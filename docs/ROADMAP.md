@@ -27,7 +27,11 @@
 >
 > **2026-10-13 更新：区块 5 已合并、区块 6 代码完成待验收** —— 区块 5（消息与角标）PR #16 已合并、
 > 待真机验收；区块 6（弱网与性能）PR #17 代码/单测/预检/CI 全绿、待真机验收。
-> M2「可发」只差区块 7（签名与首个 Release）。
+>
+> **2026-10-17 更新：M2「可发」已达成** —— 区块 7（签名与首个 Release）完成：
+> 首个正式 Release [`v0.1.0`](https://github.com/nhyzcms/app/releases/tag/v0.1.0) 已发布
+> （含构建前 keystore 指纹闸门 + 构建后产物 `apksigner` 校验），自托管分发
+> `https://8.153.145.175/app-update/` 已生效，**真机验收通过（管理员确认）**。
 
 ---
 
@@ -205,11 +209,14 @@
   （`/opt/club/data/app-update/`），详见 [PITFALLS §8](PITFALLS.md) 与
   [deploy/app-update/README.md §1.2](../deploy/app-update/README.md)。
 
-**剩余：真机验收（仅此一项）**
+**✅ 真机验收通过（2026-10-17，管理员确认）**
 
-- ⏳ 在真机上安装 Release 的 `app-release.apk`（与 debug 包 `applicationId` 不同，可共存）：
-  确认能进站、能登录、签名校验通过；再发一个同签名新版确认能覆盖安装
-  （验收清单见 [CHUNK-07 报告](chunks/CHUNK-07-REPORT.md) §5）。
+- 已安装 Release 的 `app-release.apk`，确认能进站、能登录（正式版与 debug 包 `applicationId` 不同，可共存）；
+- 签名由 CI 两道闸门保证：构建前 keystore 指纹 = 登记值、构建后产物 `apksigner` 证书 = 登记值；
+  下次发同签名新版时「覆盖安装」即为签名链路的最终验证（验收清单见
+  [CHUNK-07 报告](chunks/CHUNK-07-REPORT.md) §5）。
+
+> 至此区块 7 全部完成：密钥、Secrets、签名闸门、首个 Release、自托管分发、真机验收。
 
 
 ---

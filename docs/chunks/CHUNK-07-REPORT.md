@@ -1,9 +1,9 @@
-# 区块 7 报告 · 签名与首个 Release（第一步：密钥与签名闸门）
+# 区块 7 报告 · 签名与首个 Release
 
 日期：2026-10-17
-分支：`feat/07-signing-release`
-状态：**区块 7 已完成** —— 密钥与 Secrets 就绪、发版闸门已上、首个 Release `v0.1.0` 已发布、
-自托管镜像已生效；仅剩真机验收。
+分支：`feat/07-signing-release` → `fix/07-release-signing-config` → `docs/07-release-done`
+状态：**区块 7 已完成（含真机验收）** —— 密钥与 Secrets 就绪、发版闸门已上、
+首个 Release `v0.1.0` 已发布、自托管镜像已生效、真机验收通过。
 
 ---
 
@@ -125,7 +125,7 @@ NullPointerException: SigningConfig "release" is missing required property "keyP
 
 ---
 
-## 5. 收尾结果（区块 7 已完成，仅剩真机验收）
+## 5. 收尾结果（区块 7 已完成，真机验收通过）
 
 1. ✅ 密钥 / 闸门 / 文档 PR #21 已合并；签名配置自赋值的修复 PR #22 已合并。
 2. ✅ `verify-signing` 手动作业在 main 上跑通（run 38932598026：解码 keystore ✅ + 校验指纹 ✅）。
@@ -154,8 +154,10 @@ NullPointerException: SigningConfig "release" is missing required property "keyP
    > `scripts/nginx-app-update.conf` 与相关文档，防止下一个人重犯。
    > 同类问题：发布脚本原来用 `install -m 0640`（root:root），nginx 读不到会 403 —— 已改为 0755/0644。
 
-5. ⏳ **只剩真机验收**：在真机上安装 Release 的 `app-release.apk`（与 debug 包可共存，`applicationId` 不同），
-   确认能进站、能登录；再发一个同签名的新版本，确认**覆盖安装**成功（这才是签名闸门真正保护的那条路径）。
+5. ✅ **真机验收通过（2026-10-17，管理员确认）**：已安装 Release 的 `app-release.apk`
+   （与 debug 包 `applicationId` 不同，可共存），确认能进站、能登录。
+   签名链路的最终验证留在下次发同签名新版时——**覆盖安装成功**即证明两版签名一致，
+   那正是这两道闸门（构建前 keystore 指纹、构建后产物 `apksigner`）保护的那条路径。
 
 ---
 
