@@ -259,6 +259,8 @@ class PushHost(
      */
     private fun askBatteryExemptionOnce() {
         val activity = currentActivity ?: return
+        // 6 秒延迟里用户可能已经退出：往已销毁的 Activity 上 show() 会抛 BadTokenException。
+        if (activity.isFinishing || activity.isDestroyed) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         val pm = app.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
         if (pm.isIgnoringBatteryOptimizations(app.packageName)) return
