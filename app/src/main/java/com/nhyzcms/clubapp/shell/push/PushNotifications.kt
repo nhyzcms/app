@@ -40,6 +40,9 @@ class PushNotifications(private val context: Context) {
     fun ensureChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        // ⚠️ 顺序很重要：老用户的「unread」渠道早就存在，下面的早退会让私信渠道**永远建不出来**；
+        // 而 Android 8+ 往不存在的渠道发通知会被系统静默丢弃（通知栏什么都不显示）。
+        ensureAlertChannel(manager)
         if (manager.getNotificationChannel(AppConfig.NOTIFICATION_CHANNEL_ID) != null) return
         val channel = NotificationChannel(
             AppConfig.NOTIFICATION_CHANNEL_ID,
@@ -52,7 +55,6 @@ class PushNotifications(private val context: Context) {
         channel.enableLights(false)
         channel.setSound(null, null)
         manager.createNotificationChannel(channel)
-        ensureAlertChannel(manager)
     }
 
     /**

@@ -201,6 +201,20 @@ if [ -f "$PUSH_DIR/PushService.kt" ]; then
   fi
 fi
 
+# ── 11. 渠道创建顺序（2026-10-17）──────────────────────────────────
+#    老用户的 unread 渠道早就存在，ensureChannel() 里若有「已存在就 return」的早退，
+#    排在它后面的 ensureAlertChannel 就永远跑不到；而 Android 8+ 往不存在的渠道
+#    发通知会被系统**静默丢弃**（通知栏什么都不显示，极难排查）。
+if [ -f "$NOTIF" ]; then
+  if grep -q 'ALERT_CHANNEL_ID' "$NOTIF"; then
+    a=$(grep -n 'ensureAlertChannel(manager)' "$NOTIF" | head -1 | cut -d: -f1)
+    b=$(grep -n 'getNotificationChannel(AppConfig.NOTIFICATION_CHANNEL_ID)' "$NOTIF" | head -1 | cut -d: -f1)
+    if [ -n "$a" ] && [ -n "$b" ] && [ "$a" -gt "$b" ]; then
+      err "ensureAlertChannel 必须在 unread 渠道的早退之前调用（否则老设备上私信渠道建不出来，通知会被系统丢弃）"
+    fi
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "[预检-push] 全部通过 ✅"
 else
