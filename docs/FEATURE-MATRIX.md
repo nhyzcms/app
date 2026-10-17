@@ -37,8 +37,8 @@
 | 22 | 相机拍照直传 | 全局 | — | 相机权限 + FileProvider | 2 | ✅ 已实现并真机验证（2026-10-12 管理员验证，HUAWEI P40 Pro+ / HarmonyOS 4.2） |
 | 23 | 文件下载（导出/附件） | 全局 | — | `DownloadManager` + 会话 Cookie | 2 | ✅ 已实现并真机验证（2026-10-12 管理员验证，HUAWEI P40 Pro+ / HarmonyOS 4.2；Android 8/9 会先问存储权限，本机 Android 12 不需） |
 | 24 | 长按图片保存/分享/复制 | 全局 | — | 上下文菜单 + 图片下载 + FileProvider 分享 | 2 | ✅ 已实现并真机验证（2026-10-12 管理员验证，HUAWEI P40 Pro+ / HarmonyOS 4.2） |
-| 25 | 实时消息（Channels） | 全局 | — | WebSocket 前台保活 | 5 | 🟡 代码就绪（2026-10-13）：前台 WSS + 静音通知驱动角标 + 点通知直达会话，待真机验收 |
-| 26 | 未读角标/通知 | 全局 | — | 角标 + 应用内通知 | 5 | 🟡 代码就绪（2026-10-13）：`IMPORTANCE_LOW` 静音通知 + `setNumber` 驱动 launcher 角标，待真机验收 |
+| 25 | 实时消息（Channels） | 全局 | — | WebSocket + 前台服务常驻保活 | 5 | 🟡 代码就绪（2026-10-17 补强）：前台 WSS + 常驻前台服务（退到后台不断连）+ 静音通知驱动角标 + 点通知直达会话，待真机验收 |
+| 26 | 未读角标/通知 | 全局 | — | 角标 + 应用内通知 + 站内红点 | 5 | 🟡 代码就绪（2026-10-17）：`IMPORTANCE_LOW` 静音通知 + `setNumber` 驱动 launcher 角标；原生未读变化派发 `club:unread` 让网页红点即时刷新（网站侧 PR #157），待真机验收 |
 | 27 | Django Admin | `/admin/` | ❌ | 无（布局对手机不友好） | 8 | ⏳ 8（低优先） |
 | 28 | Live2D 看板娘 | 全局 | — | WebGL（默认关闭） | 6 | 🟡 **App 内完全不加载**：网站侧按视口宽度（≤1024 px）不挂载 + 壳侧兜底拦截 `/static/live2d/`（`blockLive2dAssets` 默认开）；实测 App UA 零请求（2026-10-13 生产 access.log） |
 | 29 | 三级更新：L0 网站热更新 | 全局 | — | WebView 缓存策略 + 入口 HTML 及时刷新 | 3 | ✅ 已实现并真机验证（2026-10-12 管理员验证，HUAWEI P40 Pro+ / HarmonyOS 4.2）；⏳ 网站侧入口 no-cache 待区块 8 |

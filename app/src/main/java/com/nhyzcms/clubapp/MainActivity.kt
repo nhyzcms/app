@@ -220,6 +220,7 @@ class MainActivity : AppCompatActivity() {
         feel.configure()
 
         configureWebView()
+        bindPushBridge()
         registerBackCallback()
         bindErrorPanelActions()
 
@@ -247,6 +248,32 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ── 初始化 ────────────────────────────────────────────────────────────────
+
+    /**
+     * 区块 5 补强（2026-10-17）：把原生层的「未读变化」转成网页事件。
+     *
+     * 为什么需要：App 里用户看到的是手机版 `/m`，它没有桌面顶栏那套徽标；
+     * 原生 WS 收到新私信时虽然会发系统通知，但页面上的红点要等下一次轮询（最多 30 s）。
+     * 这里在未读数变化时给页面派发一个 `club:unread` 事件（**只发事件、不带任何数据**），
+     * 网页侧收到后立刻重拉未读计数（见 frontend/src/api/unreadBadges.ts）。
+     *
+     * 安全：evaluateJavascript 只执行这**一个常量字符串**，不接受任何外部输入；
+     * 也没有引入 addJavascriptInterface（安全文档第 4 节明令禁止）。
+     */
+    private fun bindPushBridge() {
+        // 注意：companion 成员只能用类名访问，写在 (application as? ClubApp)?.pushHost 上会解析不到。
+        val host = ClubApp.pushHost ?: return
+        host.onUnreadChanged = {
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    webView.evaluateJavascript(
+                        "window.dispatchEvent(new Event('club:unread'))",
+                        null,
+                    )
+                }
+            }
+        }
+    }
 
     private fun bindViews() {
         webView = findViewById(R.id.webView)
@@ -758,6 +785,9 @@ class MainActivity : AppCompatActivity() {
 
         // 区块 4：停掉网页状态探测，避免 Handler 继续持有即将销毁的 WebView
         feel.dispose()
+
+        // 区块 5 补强：解除网页事件桥，避免 Application 持有已销毁的 Activity
+        ClubApp.pushHost?.onUnreadChanged = null
 
         // WebView 不主动销毁会泄露 Activity。
         // ⚠️ 踩坑：API 35 上 setWebViewClient 的参数是 @NonNull，**不能传 null**

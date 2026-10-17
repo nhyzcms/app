@@ -128,7 +128,7 @@
 
 ---
 
-## 区块 5 — 消息与角标（🟡 代码完成，PR #16 已合并 2026-10-13，待真机验收）
+## 区块 5 — 消息与角标（🟡 代码完成；PR #16 已合并，2026-10-17 常驻后台补强 PR #25，待真机验收）
 
 - **目标**：新私信/通知能被及时发现（不要求后台推送）。
 - **交付物**（实际落地）：前台 WSS 保活（`shell/push/PushSocket.kt`：自写帧 + 握手校验 + 心跳 + 退避重连）、
@@ -137,9 +137,21 @@
   通知权限（Android 13+ 运行时申请）、专项预检 `scripts/preflight-push.sh`。
 - **跨仓库契约**：[docs/PUSH-CONTRACT.md](PUSH-CONTRACT.md)（连接与鉴权 / 三类事件与 payload / 未读接口 / 深链 / 变更检查表）。
 - **验收**：A 手机发私信 → B 在 App 前台 5 秒内看到未读变化；从通知进入后会话已标记已读（网站侧已有 `mark_conversation_read`）。
-- **边界**：不在本块做常驻后台保活（耗电且国内推送生态限制），留待后续评估。
+- **边界**：~~不在本块做常驻后台保活~~ —— **2026-10-17 已推翻**：管理员明确要求「退到后台也要实时提醒」，
+  改为前台服务常驻（见下面的补强条目）。仍然不做的是「服务器主动拉起 App」（无厂商推送通道时做不到），
+  以及绕过系统省电策略的任何 hack。
 - **状态**：代码 / 单测（189 用例）/ 静态预检完成，**纯 app 仓库改动**（未改网站仓库）；
   待管理员真机验收（见 [chunks/CHUNK-05-REPORT.md](chunks/CHUNK-05-REPORT.md) 第 5 节的 10 条）。
+- **2026-10-17 补强（PR #25）**：真机反馈「App 退到后台完全没反应，只有打开私信页才看到」。
+  根因是 `onActivityStopped` 里主动停掉看门狗与连接 —— **后台根本不连**。改为：
+  - 登录后由前台服务 `shell/push/PushService` 常驻（`dataSync` / `START_STICKY` / `stopWithTask=false`），
+    进程与 WS 连接一起保活，退到后台不再断连；后台兜底刷新从 90 s 放慢到 5 min；
+  - 新增 `FOREGROUND_SERVICE(_DATA_SYNC)` 与 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 权限，
+    登录后一次性引导「忽略电池优化」（Doze 会掐长连接）；
+  - 未读变化经 `MainActivity` 向网页派发常量事件 `club:unread`，站内红点即时刷新（不做 JS 桥）；
+  - `preflight-push.sh` 第 10 组规则把「onActivityStopped 不得 stopPush」钉死。
+  验收步骤见 [FIX-20261017-BACKGROUND-PUSH.md](FIX-20261017-BACKGROUND-PUSH.md)。
+  网站侧配套（手机版红点 + 外观切换 + App 默认跟随系统）在网站仓库 PR #157。
 
 ---
 

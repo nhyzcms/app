@@ -33,6 +33,8 @@ class PushNotifier(
             title = app.getString(R.string.notif_title),
             text = summaryText(badge),
             route = route(badge),
+            // 私信才响铃/振动；纯站内通知保持静音（与区块 5 的原始设计一致）。
+            alert = badge.directMessages > 0,
         )
     }
 

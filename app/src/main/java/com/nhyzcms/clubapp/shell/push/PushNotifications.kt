@@ -40,6 +40,9 @@ class PushNotifications(private val context: Context) {
     fun ensureChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        // ⚠️ 顺序很重要：老用户的「unread」渠道早就存在，下面的早退会让私信渠道**永远建不出来**；
+        // 而 Android 8+ 往不存在的渠道发通知会被系统静默丢弃（通知栏什么都不显示）。
+        ensureAlertChannel(manager)
         if (manager.getNotificationChannel(AppConfig.NOTIFICATION_CHANNEL_ID) != null) return
         val channel = NotificationChannel(
             AppConfig.NOTIFICATION_CHANNEL_ID,
@@ -54,6 +57,24 @@ class PushNotifications(private val context: Context) {
         manager.createNotificationChannel(channel)
     }
 
+    /**
+     * 「有声」的私信渠道（AppConfig.ALERT_CHANNEL_ID）。
+     *
+     * IMPORTANCE_DEFAULT：响铃 + 振动，允许角标；用户若嫌吵可以在系统设置里把它调成静音，
+     * 那时会退化成与未读渠道一样的「静默角标」，但**不影响**能否收到通知。
+     */
+    private fun ensureAlertChannel(manager: NotificationManager) {
+        if (manager.getNotificationChannel(AppConfig.ALERT_CHANNEL_ID) != null) return
+        val channel = NotificationChannel(
+            AppConfig.ALERT_CHANNEL_ID,
+            context.getString(R.string.notif_alert_channel_name),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        channel.description = context.getString(R.string.notif_alert_channel_desc)
+        channel.setShowBadge(true)
+        manager.createNotificationChannel(channel)
+    }
+
     /** 能不能发通知（Android 13+ 看运行时权限）。 */
     fun canPost(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
@@ -63,16 +84,66 @@ class PushNotifications(private val context: Context) {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    /** 发 / 更新未读通知（固定 id，更新同一条）。 */
-    fun show(count: Int, title: String, text: String, route: String) {
+    /**
+     * 发 / 更新未读通知（固定 id，更新同一条）。
+     *
+     * @param alert true = 新私信，走有声渠道（响铃/振动）；false = 站内通知，走静音渠道。
+     *              两者共用同一个通知 id —— 后到的会原地更新，不在通知栏堆一屏。
+     */
+    fun show(count: Int, title: String, text: String, route: String, alert: Boolean) {
         ensureChannel()
-        val notification = build(count, title, text, route)
+        val notification = build(count, title, text, route, alert)
         runCatching { NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification) }
     }
 
     /** 清掉未读通知（已读 / 登出 / 被挤号）。 */
     fun clear() {
         runCatching { NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID) }
+    }
+
+    /**
+     * 常驻后台（区块 5 补强）：前台服务的通知渠道。
+     *
+     * 为什么必须单独一条渠道：前台服务必须有一条**持续可见**的通知，而 launcher 的数字角标
+     * 来自「活动的通知」——若把服务通知塞进未读渠道，角标就会一直挂着、清不掉。
+     * 因此这里 IMPORTANCE_MIN + setShowBadge(false)，只起「告诉用户正在后台收消息」的作用。
+     */
+    fun ensureServiceChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        if (manager.getNotificationChannel(AppConfig.SERVICE_CHANNEL_ID) != null) return
+        val channel = NotificationChannel(
+            AppConfig.SERVICE_CHANNEL_ID,
+            context.getString(R.string.notif_service_channel_name),
+            NotificationManager.IMPORTANCE_MIN,
+        )
+        channel.description = context.getString(R.string.notif_service_channel_desc)
+        channel.setShowBadge(false)
+        channel.enableVibration(false)
+        channel.enableLights(false)
+        channel.setSound(null, null)
+        manager.createNotificationChannel(channel)
+    }
+
+    /** 前台服务用的常驻通知（START_STICKY 保活的生命周期与它绑定）。 */
+    fun buildServiceNotification(): Notification {
+        ensureServiceChannel()
+        return NotificationCompat.Builder(context, AppConfig.SERVICE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_club)
+            .setContentTitle(context.getString(R.string.notif_service_title))
+            .setContentText(context.getString(R.string.notif_service_text))
+            .setContentIntent(contentIntent("/#/m"))
+            .setOngoing(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
+    }
+
+    /** 服务停止时把常驻通知一起收掉（否则会留一条点不动的僵尸通知）。 */
+    fun hideService() {
+        runCatching { NotificationManagerCompat.from(context).cancel(SERVICE_ID) }
     }
 
     /**
@@ -128,8 +199,15 @@ class PushNotifications(private val context: Context) {
         manager.createNotificationChannel(channel)
     }
 
-    private fun build(count: Int, title: String, text: String, route: String): Notification {
-        return NotificationCompat.Builder(context, AppConfig.NOTIFICATION_CHANNEL_ID)
+    private fun build(
+        count: Int,
+        title: String,
+        text: String,
+        route: String,
+        alert: Boolean,
+    ): Notification {
+        val channel = if (alert) AppConfig.ALERT_CHANNEL_ID else AppConfig.NOTIFICATION_CHANNEL_ID
+        return NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_stat_club)
             .setContentTitle(title)
             .setContentText(text)
@@ -137,9 +215,10 @@ class PushNotifications(private val context: Context) {
             .setContentIntent(contentIntent(route))
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(if (alert) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_LOW)
+            // 同一条通知只在**第一次**出现时响：之后继续更新数字/内容，但不反复打断。
             .setOnlyAlertOnce(true)
-            .setSilent(true)
+            .setSilent(!alert)
             .setLocalOnly(true)
             .build()
     }
@@ -155,13 +234,15 @@ class PushNotifications(private val context: Context) {
         return PendingIntent.getActivity(context, REQUEST_CODE, intent, flags)
     }
 
-    private companion object {
+    companion object {
         /** 固定通知 id：未读通知永远是"同一条"，只更新内容与数字。 */
         const val NOTIFICATION_ID = 1001
         /** 自检通知单独用一个 id，绝不复用未读通知那条（否则会把它顶掉）。 */
         const val SELF_TEST_ID = 1002
         /** 诊断通知（debug）：永远更新同一条，不刷屏。 */
         const val DIAG_ID = 1003
+        /** 常驻后台的前台服务通知（不能复用未读那条，否则会互相顶掉）。 */
+        const val SERVICE_ID = 1004
         const val REQUEST_CODE = 2001
     }
 }

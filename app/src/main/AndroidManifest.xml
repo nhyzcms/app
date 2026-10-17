@@ -29,6 +29,18 @@
       网页里的未读徽标照常工作；不会反复弹窗骚扰（见 shell/push/PushHost）。
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      常驻后台（区块 5 补强，2026-10-17）：用户明确要求「退到后台也要实时提醒」，
+      壳用**前台服务**把 WebSocket 连接与进程一起保活（见 shell/push/PushService）。
+
+      · FOREGROUND_SERVICE：API 28 起启动前台服务的前提；
+      · FOREGROUND_SERVICE_DATA_SYNC：API 34 起按类型额外校验（服务在清单里声明 dataSync）；
+      · REQUEST_IGNORE_BATTERY_OPTIMIZATIONS：Doze 会掐断长连接，需要用户允许「忽略电池优化」。
+        这条权限只允许弹出系统的**允许对话框**，不能自己改设置；用户随时可撤回。
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- 没有摄像头的设备（平板、部分模拟器）也要能安装 -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -102,6 +114,21 @@
                 <data android:scheme="https" android:host="8.153.145.175" />
             </intent-filter>
         </activity>
+
+        <!--
+          常驻后台（区块 5 补强）：用户退到界面外后，由这个前台服务把进程与 WS 连接保活，
+          从而「有新私信/通知就立刻提醒」。此前 onActivityStopped 里直接断开连接，
+          因此 App 一退到后台就再也收不到东西（2026-10-17 管理员反馈）。
+
+          · exported=false：只由本应用启动；
+          · foregroundServiceType=dataSync：API 34 起前台服务必须声明类型；
+          · stopWithTask=false：从最近任务里划掉也不停（配合 START_STICKY 一起保活）。
+        -->
+        <service
+            android:name=".shell.push.PushService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
 
         <!--
           拍照输出、分享图片、更新包的临时文件都通过 FileProvider 交给对方 App/系统安装器
