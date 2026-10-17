@@ -261,7 +261,8 @@ class MainActivity : AppCompatActivity() {
      * 也没有引入 addJavascriptInterface（安全文档第 4 节明令禁止）。
      */
     private fun bindPushBridge() {
-        val host = (application as? ClubApp)?.pushHost ?: return
+        // 注意：companion 成员只能用类名访问，写在 (application as? ClubApp)?.pushHost 上会解析不到。
+        val host = ClubApp.pushHost ?: return
         host.onUnreadChanged = {
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
@@ -786,7 +787,7 @@ class MainActivity : AppCompatActivity() {
         feel.dispose()
 
         // 区块 5 补强：解除网页事件桥，避免 Application 持有已销毁的 Activity
-        (application as? ClubApp)?.pushHost?.onUnreadChanged = null
+        ClubApp.pushHost?.onUnreadChanged = null
 
         // WebView 不主动销毁会泄露 Activity。
         // ⚠️ 踩坑：API 35 上 setWebViewClient 的参数是 @NonNull，**不能传 null**
