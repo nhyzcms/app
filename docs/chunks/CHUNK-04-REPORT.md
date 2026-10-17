@@ -169,7 +169,7 @@
    在二级页面按返回应正常回退（不退出）。
 8. **预测式返回（Android 13+）**：从屏幕边缘向内慢慢拖 —— 应能看到**返回箭头的预览动画**。
 9. **深色配色**：进入「个人中心 → 外观」切深色/浅色 —— 状态栏、导航栏颜色应随网页改变，不出现色带。
-10. **清单开关**：把 `/opt/club/app-update/manifest.json` 的 `flags.showBackToTop` 改成 `false`，
+10. **清单开关**：把 `/opt/club/data/app-update/manifest.json` 的 `flags.showBackToTop` 改成 `false`，
     重开 App → 浮动按钮不再出现（改回来即恢复）。
 
 ---

@@ -18,7 +18,7 @@
   ```nginx
   # /etc/nginx/conf.d/club.conf 的 HTTPS server { } 内
   location /app-update/ {
-      alias /opt/club/app-update/;
+      alias /opt/club/data/app-update/;
       autoindex off;
       add_header Cache-Control "no-cache" always;   # 每次协商，拿到即时配置
       add_header Strict-Transport-Security "max-age=31536000" always;
@@ -28,7 +28,10 @@
       limit_except GET HEAD { deny all; }
   }
   ```
-  目录：`/opt/club/app-update/{manifest.json, latest.apk, latest.apk.sha256}`，权限 `root:<nginx worker 用户> 0750`（文件 0640）——
+  目录：`/opt/club/data/app-update/{manifest.json, latest.apk, latest.apk.sha256}`。
+  **必须在 `/opt/club/data/` 下**：网站更新器是 rsync `--delete` 语义，`/opt/club` 下不在
+  `SYNC_EXCLUDES` 里的顶层目录会被删（2026-10-17 实测，原路径 `/opt/club/app-update/` 就这么没的）。
+  权限：目录 0755 + 文件 0644（或 `root:<nginx worker 用户>` 0750/0640）——
   worker 用户以机器实际为准（本机是 `nginx`；Debian 系常见 `www-data`），**写错会 403**。
   location 内一旦用 `add_header` 就不再继承 server 级，所以 HSTS / Alt-Svc 要重复声明。
 - **缓存**：绝不能长缓存（否则开关不生效）；用 `no-cache` + ETag/Last-Modified。

@@ -130,7 +130,9 @@ sudo cp -a /etc/nginx/conf.d/club.conf /etc/nginx/conf.d/club.conf.bak.app-updat
 # ② 脚本方式：在 HTTPS server { } 块内、location / { 之前插入片段
 #    （片段内容 = scripts/nginx-app-update.conf）
 
-# ③ 目录与初始清单（最新：root:nginx 0750 / 0640 —— worker 用户是 nginx，不是 www-data）
+# ③ 目录与初始清单（⚠️ 这是 2026-10-11 的原始记录；**路径已过时**：
+#    原目录会被网站更新器删除，现应使用 /opt/club/data/app-update/，见 §下方补充与
+#    deploy/app-update/README.md §1.2。权限也改成 0755 + 文件 0644）
 sudo install -d -m 0750 -o root -g nginx /opt/club/app-update
 sudo install -m 0640 -o root -g nginx <manifest.json> /opt/club/app-update/manifest.json
 
@@ -155,7 +157,10 @@ sudo nginx -t && sudo nginx -s reload
 
 ### 5.4 尚需留意
 
-更新器是否会清理 `/opt/club` 下的未知目录**未实测**；请在下一次网站发版后 `ls /opt/club/app-update/` 复核一次。
+更新器是否会清理 `/opt/club` 下的未知目录 —— **2026-10-17 实测结论：会删。**
+自动更新（应用发布包 `b6c065a`，00:42 应用）把 `/opt/club/app-update/` 整个删掉了，端点立刻 404。
+原因是更新器用 rsync `--delete` 语义镜像发布包，只有 `SYNC_EXCLUDES` 里的顶层条目被保留。
+**现已迁到 `/opt/club/data/app-update/`**（`data` 在排除项里），详见 `deploy/app-update/README.md` §1.2 与 `docs/PITFALLS.md` §8。
 
 ### 5.5 可选：网站侧的一处小改（属于区块 8）
 
@@ -178,7 +183,7 @@ VERSION_CODE=1 VERSION_NAME=0.1.0 gradle :app:assembleDebug     # 先装这个
 VERSION_CODE=2 VERSION_NAME=0.2.0 gradle :app:assembleDebug     # 再把它当作"新版本"发布
 ```
 
-把第二个包发到自托管目录（在能写 `/opt/club/app-update` 的机器上）：
+把第二个包发到自托管目录（在能写 `/opt/club/data/app-update` 的机器上）：
 
 ```bash
 bash scripts/publish-apk.sh --apk app/build/outputs/apk/debug/app-debug.apk \
@@ -229,5 +234,5 @@ bash scripts/publish-apk.sh --apk app/build/outputs/apk/debug/app-debug.apk \
 
 - 代码：`git revert` 合并提交即可（本块不涉及数据库）；
 - 服务器：把 `/etc/nginx/conf.d/club.conf.bak.app-update-20261011-225834` 复回原位 → `nginx -t && nginx -s reload`；
-  `/opt/club/app-update/` 目录可以留着（不生效也无害）；
+  `/opt/club/data/app-update/` 目录可以留着（不生效也无害）；
 - 线上开关：把 manifest 的 `latest` 置回 `null`，即刻停止推更新（`Cache-Control: no-cache`）。

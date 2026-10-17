@@ -190,21 +190,26 @@
   `app-release.apk` 的签名证书 = 登记值（验的是包本身，不只是钥匙；本地无 SDK，这道只能在 CI 做）；
 - ✅ 本地已做正向 + 4 组反向注入验证（换钥 / 口令错 / 别名错 / 登记损坏均被拦，口令从不打印），
   并对新增的预检规则做了反向注入（删掉 apksigner 校验后规则确实报错）；
-- ⚠️ **首次 tag `v0.1.0` 在 `assembleRelease` 失败**（签名配置自赋值，与密钥无关），
-  根因与修复见 [FIX-20261017](FIX-20261017-SIGNING-SELF-ASSIGN.md)，
-  同时新增**试跑 Release**（`workflow_dispatch` + `dry_run_release=true`），
-  修好后试跑已全绿（run 38934792986：keystore 闸门 ✅ / 构建 ✅ / 产物 apksigner ✅ / 不发 Release ⏭）。
+- ⚠️ **首次 tag `v0.1.0` 在 `assembleRelease` 失败**（签名配置自赋值，与密钥无关）→ 已由 PR #22 修复合并，
+  并新增**试跑 Release**（`workflow_dispatch` + `dry_run_release=true`，不发 Release 也能把发版路径跑一遍）；
+  根因与复盘见 [FIX-20261017](FIX-20261017-SIGNING-SELF-ASSIGN.md)；
+- ✅ **首个正式 Release 已发布（2026-10-17）**：tag `v0.1.0` 打在 `24f3ee1` 上，
+  [Release 页面](https://github.com/nhyzcms/app/releases/tag/v0.1.0) 含 `app-release.apk`（664,818 B）
+  与 `.sha256`（`6e5f62298a6e0001adf63d9bc15af6e6f2615e5ed48f0f9589439ef6bc530809`）；
+  CI 的两道闸门（keystore 指纹 + 产物 `apksigner`）均通过；
+- ✅ **自托管镜像已生效**：包与清单已发布到 `/opt/club/data/app-update/`，
+  公网 `https://8.153.145.175/app-update/manifest.json` 与 `…/latest.apk` 均 200，
+  且「从公网下载再算 sha256 = manifest 里的值」端到端核对通过；
+- ⚠️ **顺带发现并修掉一个运维陷阱**：原目录 `/opt/club/app-update/` 被网站自动更新
+  （rsync `--delete` 语义）于 2026-10-17 00:42 整个删除 → 已迁到更新器排除项里的 `data` 根
+  （`/opt/club/data/app-update/`），详见 [PITFALLS §8](PITFALLS.md) 与
+  [deploy/app-update/README.md §1.2](../deploy/app-update/README.md)。
 
-**未完成（本块收尾）**
-- ⏳ 合并签名配置自赋值的修复（`fix/07-release-signing-config`，见 [FIX-20261017](FIX-20261017-SIGNING-SELF-ASSIGN.md)），
-  再把 tag `v0.1.0` 指向修复后的 main（首次那个 tag 没有产出任何 Release，可安全重打）；
-- ⏳ 真正发一次 Release（`version.properties` 为 `versionCode=1 / versionName=0.1.0`，tag 需与之一致）；
-- ⏳ 用 `apksigner verify` 核对 Release 产物，并按验收标准做一次**覆盖安装**实测
-  （正式版与 debug 包是不同 `applicationId`，不冲突）；
-- ⏳ 把 APK 同步到自托管分发目录 `/opt/club/app-update/`（`scripts/publish-apk.sh`）
-  并更新 `manifest.json` 的 `latest` 字段，让老用户走 L2 升级路径；
-- ⏳ 服务器侧 `latest.apk` 目前是 404（还没发包），首发后需复核
-  `curl -sSI https://8.153.145.175/app-update/latest.apk` 返回 200。
+**剩余：真机验收（仅此一项）**
+
+- ⏳ 在真机上安装 Release 的 `app-release.apk`（与 debug 包 `applicationId` 不同，可共存）：
+  确认能进站、能登录、签名校验通过；再发一个同签名新版确认能覆盖安装
+  （验收清单见 [CHUNK-07 报告](chunks/CHUNK-07-REPORT.md) §5）。
 
 
 ---
