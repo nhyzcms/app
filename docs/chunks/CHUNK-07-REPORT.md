@@ -2,7 +2,8 @@
 
 日期：2026-10-17
 分支：`feat/07-signing-release`
-状态：**密钥与 Secrets 已就绪，发版闸门已上；尚未打 tag 发首个 Release。**
+状态：**区块 7 已完成** —— 密钥与 Secrets 就绪、发版闸门已上、首个 Release `v0.1.0` 已发布、
+自托管镜像已生效；仅剩真机验收。
 
 ---
 
@@ -124,26 +125,37 @@ NullPointerException: SigningConfig "release" is missing required property "keyP
 
 ---
 
-## 5. 收尾待办（区块 7 剩余部分）
+## 5. 收尾结果（区块 7 已完成，仅剩真机验收）
 
-1. **合并本 PR**（密钥/闸门/文档）。
-2. **触发一次 `verify-signing` 手动作业**，确认 Secrets 真能解出登记的那把密钥：
-   ```bash
-   gh workflow run android.yml --repo nhyzcms/app --ref main
-   ```
-3. `version.properties` 当前是 `versionCode=1 / versionName=0.1.0`；
-   发首个 Release 只需在 main 上打 tag `v0.1.0`（tag 必须等于 `versionName`，CI 会校验）。
-4. 用 `apksigner verify --print-certs` 核对 Release 产物的指纹 = 登记值
-   —— **CI 的 `release` 作业已经自动做了这步**（构建后、上传产物前），失败即拒绝发布；
-   人工只需复核 Release Notes 与 `out/app-release.apk.sha256`。
-5. 做一次**覆盖安装**实测：正式版与 debug 包 `applicationId` 不同（`.debug` 后缀），
-   两者可共存，不冲突；真正要验的是"正式版装第二次能覆盖"。
-6. 把 APK 同步到自托管目录，让老用户走 L2 升级：
-   ```bash
-   bash scripts/publish-apk.sh --apk <下载的 apk> --version-code 1 --version-name 0.1.0 --notes "..."
-   ```
-   然后复核 `curl -sSI https://8.153.145.175/app-update/latest.apk`（目前是 404，符合"还没发包"）。
-7. 在 `docs/chunks/CHUNK-07-REPORT.md`（本文件）补上"首个 Release 已完成"的实测结果。
+1. ✅ 密钥 / 闸门 / 文档 PR #21 已合并；签名配置自赋值的修复 PR #22 已合并。
+2. ✅ `verify-signing` 手动作业在 main 上跑通（run 38932598026：解码 keystore ✅ + 校验指纹 ✅）。
+3. ✅ 首个正式 Release 已发布：tag `v0.1.0` 打在 `24f3ee1` 上，
+   run 38936344629 全绿（含构建前 keystore 指纹闸门、构建后产物 `apksigner` 校验），
+   [Release 页面](https://github.com/nhyzcms/app/releases/tag/v0.1.0)：
+   - `app-release.apk` —— 664,818 字节
+   - `app-release.apk.sha256` —— `6e5f62298a6e0001adf63d9bc15af6e6f2615e5ed48f0f9589439ef6bc530809`
+   > 首次推送的 tag `v0.1.0` 因签名配置自赋值构建失败、未产出任何 Release，
+   > 修复后已重打到新 main（tag 本身的沿革写进了 tag message）。
+
+4. ✅ 自托管镜像已发布并端到端验证：
+
+   | 项 | 值 |
+   |---|---|
+   | 目录 | `/opt/club/data/app-update/`（0755 / 文件 0644） |
+   | manifest | `latest` = v0.1.0（versionCode 1）、sha256、size 664818、强制更新 false |
+   | `manifest.json` | 200 + `application/json` |
+   | `latest.apk` | 200 + `application/vnd.android.package-archive` + 664818 字节 |
+   | 端到端 | `curl -skSL …/latest.apk \| sha256sum` = manifest 里的 sha256 ✔ |
+   | 站点 | 首页 200；nginx / club / redis / postgresql-17 全 active |
+
+   > 过程中发现一个运维陷阱：原来的 `/opt/club/app-update/` 被网站自动更新
+   > （rsync `--delete` 语义）在 2026-10-17 00:42 **整个删掉**，端点 404。
+   > 已迁到更新器排除项内的 `data` 根，并把新路径写进 `scripts/publish-apk.sh` 默认值、
+   > `scripts/nginx-app-update.conf` 与相关文档，防止下一个人重犯。
+   > 同类问题：发布脚本原来用 `install -m 0640`（root:root），nginx 读不到会 403 —— 已改为 0755/0644。
+
+5. ⏳ **只剩真机验收**：在真机上安装 Release 的 `app-release.apk`（与 debug 包可共存，`applicationId` 不同），
+   确认能进站、能登录；再发一个同签名的新版本，确认**覆盖安装**成功（这才是签名闸门真正保护的那条路径）。
 
 ---
 

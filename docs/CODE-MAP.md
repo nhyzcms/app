@@ -233,5 +233,9 @@
   `scripts/verify-keystore.sh`（发版闸门）、`scripts/preflight-signing.sh`（签名层静态规则）；
   工作流新增 `verify-signing` 作业与 `dry_run_release` 试跑输入；
   修复 `app/build.gradle.kts` 签名配置自赋值（见 [FIX-20261017](FIX-20261017-SIGNING-SELF-ASSIGN.md)）。
+- **2026-10-17（区块 7 收尾）**：首个 Release `v0.1.0` 发布；自托管镜像迁到
+  `/opt/club/data/app-update/`（原路径会被网站更新器 rsync `--delete` 删掉），
+  `scripts/publish-apk.sh` 默认目录与权限（0755/0644）随之修正，
+  `scripts/nginx-app-update.conf` 的 alias 同步更新（见 [PITFALLS §8](PITFALLS.md)）。
 
 <!-- EOF-SENTINEL-CODE-MAP-20261017 -->

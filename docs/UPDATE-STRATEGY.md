@@ -134,8 +134,9 @@ Android 没有"静默自升级"（除非系统应用/设备管理员）。用户
 - [ ] 更新 `docs/chunks/CHUNK-0N-REPORT.md`（本版改了什么、哪些需要新的权限）；
 - [ ] PR 合并到 `main`；
 - [ ] 打 tag `vX.Y.Z` → CI 产出签名 APK + sha256；
-- [ ] 用 `scripts/publish-apk.sh` 把包与清单一起更新到 `/opt/club/app-update/`
-      （它负责计算 sha256、复制为 `latest.apk`、改写 `manifest.json` 的 `latest` 字段）：
+- [ ] 用 `scripts/publish-apk.sh` 把包与清单一起更新到 `/opt/club/data/app-update/`
+      （**必须在 `data` 根下**，否则下次网站更新会把它删掉；它负责计算 sha256、复制为
+      `latest.apk`、改写 `manifest.json` 的 `latest` 字段）：
       ```bash
       bash scripts/publish-apk.sh --apk /tmp/app-release.apk \
         --version-code 2 --version-name 0.2.0 --notes "本版更新说明"

@@ -48,7 +48,7 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
 ├── scripts/                        ← preflight*.sh（分区块静态预检；preflight-feel.sh 连带跑全部专项）、CI 辅助脚本、
 │                                     nginx-app-update.conf（/app-update/ 片段）、
 │                                     publish-apk.sh（把 APK 发到自托管目录并更新清单）
-├── deploy/app-update/              ← 要拷到服务器 /opt/club/app-update/ 的清单模板与部署说明
+├── deploy/app-update/              ← 要拷到服务器 /opt/club/data/app-update/ 的清单模板与部署说明
 └── app/                            ← Android 模块
     ├── build.gradle.kts
     ├── proguard-rules.pro
@@ -213,7 +213,7 @@ gradle :app:testDebugUnitTest
 | 4 | 原生手感：沉浸式配色、启动页、骨架屏、下拉刷新、手势返回、返回顶部 | ✅ 已完成，真机验收通过 2026-10-12（[报告](docs/chunks/CHUNK-04-REPORT.md)） |
 | 5 | 站内消息与角标（前台 WSS / 静音通知驱动角标 / 点通知直达会话） | 🟡 代码就绪（PR #16 已合并 2026-10-13），待真机验收（[报告](docs/chunks/CHUNK-05-REPORT.md)｜[跨仓库契约](docs/PUSH-CONTRACT.md)） |
 | 6 | 弱网与性能（首屏看护去误报 / 探测降频 / Live2D 兜底拦截 / 低内存降级） | 🟡 代码就绪（2026-10-13，CI 绿），待真机验收（[报告](docs/chunks/CHUNK-06-REPORT.md)） |
-| 7 | 签名与首个 Release 发布 | 🟡 密钥 + Secrets + 指纹闸门已就绪（2026-10-17），待打 tag 发首个 Release（[BUILD.md §3](docs/BUILD.md)｜[报告](docs/chunks/CHUNK-07-REPORT.md)） |
+| 7 | 签名与首个 Release 发布 | ✅ 已完成（2026-10-17）：[Release v0.1.0](https://github.com/nhyzcms/app/releases/tag/v0.1.0) 已发布，自托管镜像已生效；待真机验收（[报告](docs/chunks/CHUNK-07-REPORT.md)｜[BUILD.md §3](docs/BUILD.md)） |
 | 8 | 网站侧配套（App 模式 UI 覆盖全部功能 + manifest 端点） | ⏳（已挂入网站侧不注入 live2d + 大图懒加载，见 ROADMAP） |
 | 9 | 测试与验收（手测清单 / 回归流程 / E2E） | ⏳ |
 | 10 | 长期维护手册与交接 | ⏳ |

@@ -9,22 +9,34 @@
 | `latest.apk` | 自托管的更新包（首选下载源） |
 | `latest.apk.sha256` | 上者的 sha256（便于人工核对，壳读的是 manifest 里的值） |
 
-服务器上的实际目录是 `/opt/club/app-update/`（与发布包解压目录分离：更新器只替换 Django 应用文件）。
+服务器上的实际目录是 **`/opt/club/data/app-update/`**。
+
+> ⚠️ **为什么是 `data/` 下面（2026-10-17 实测，血泪）**：
+> 网站更新器应用发布包时是「rsync `-a --delete` 等价语义」——`/opt/club` 下
+> **不在 `SYNC_EXCLUDES`**（`.env` / `db.sqlite3*` / `media` / `private_media` / `data` /
+> `run` / `backups` / `.venv` / `.git`，见网站仓库 `common/updater.py`）里的顶层条目**会被删掉**。
+> 最初放在 `/opt/club/app-update/`，结果 **2026-10-17 00:42 的自动更新把它整个删了**，
+> `/app-update/` 端点立刻 404（nginx 配置还在，只是目录没了）。
+> `data` 是网站侧的统一数据根、在排除项里，所以放到这里才不会被更新清掉。
+>
+> 顺带纠正一条旧结论：**「更新器不会碰 app-update/」是错的**（CHUNK-03 里那个"未实测"的问题，
+> 答案就是会删；详见 `docs/PITFALLS.md` §8）。
 
 ---
 
 ## 1. 首次部署（需要服务器管理员执行）
 
 ```bash
-# ⓪ 确认 nginx worker 用户（目录属主要用它，写错会 403）
+# ⓪ 确认 nginx worker 用户（决定权限怎么给，写错会 403）
 grep ^user /etc/nginx/nginx.conf      # 本机是 nginx；Debian 系常见是 www-data
 
-# ① 建目录（root 拥有，worker 只读；把 nginx 换成上一步查到的用户）
-sudo install -d -m 0750 -o root -g nginx /opt/club/app-update
+# ① 建目录（必须在 /opt/club/data/ 下，理由见上方警告）
+#    0755 + 文件 0644：连 other 都可读，最简单也最不容易出错；
+#    若想收紧，可 root:nginx 0750 + 文件 0640（注意 install 默认生成 root:root）
+sudo install -d -m 0755 /opt/club/data/app-update
 
 # ② 放一份初始清单（本仓库里的模板）
-sudo install -m 0640 -o root -g nginx \
-     deploy/app-update/manifest.json /opt/club/app-update/manifest.json
+sudo install -m 0644 deploy/app-update/manifest.json /opt/club/data/app-update/manifest.json
 
 # ③ 把 scripts/nginx-app-update.conf 的内容并进 /etc/nginx/conf.d/club.conf 的 HTTPS server 块
 #    （先备份原文件；片段里已含 no-cache、只读限制与 HSTS/Alt-Svc 重复声明）
@@ -40,23 +52,48 @@ curl -sSI https://8.153.145.175/app-update/manifest.json
 
 - 备份：`/etc/nginx/conf.d/club.conf.bak.app-update-20261011-225834`
 - 片段插入位置：HTTPS `server { }` 块内，`location / {`（gunicorn 反代）之前
-- 目录：`/opt/club/app-update/` → `root:nginx 0750`；`manifest.json` → `root:nginx 0640`
+- 目录：~~`/opt/club/app-update/` → `root:nginx 0750`~~（**已被更新器删除，见 §1.2**）
 - 验证：`manifest.json` → **200 + application/json + cache-control: no-cache**；`latest.apk` → 404（还没发包，符合预期）；首页仍 200；nginx / club / redis / postgresql-17 / club-updater-tunnel 均 active
-- 注意：更新器不会碰 `app-update/`，但**下次网站发版后建议 `ls /opt/club/app-update/` 复核一次**
+- ~~注意：更新器不会碰 `app-update/`~~ → **这条是错的，2026-10-17 被证伪，见 §1.2**
+
+### 1.2 迁移到 data 根 + 首个正式包（2026-10-17，已完成）
+
+**背景**：2026-10-17 00:42 的自动更新（应用的发布包 `b6c065a`）把 `/opt/club/app-update/`
+连同内容一起删掉了 —— 更新器是 rsync `--delete` 语义，而 `app-update` 不在 `SYNC_EXCLUDES` 里。
+同时网站侧已迁移到统一数据根：`/opt/club/data/{media,private_media,app-update}`，
+nginx 的三个 alias 也随之指向 `/opt/club/data/...`（`club.conf` 于 01:49 更新）。
+
+**结果（当前生效的部署）**：
+
+| 项 | 值 |
+|---|---|
+| 目录 | `/opt/club/data/app-update/`（0755，文件 0644） |
+| nginx alias | `/opt/club/data/app-update/`（备份 `club.conf.bak.appupdirdir-20261017-092944`） |
+| manifest | `latest` = v0.1.0（versionCode 1），sha256 `6e5f62298a6e0001adf63d9bc15af6e6f2615e5ed48f0f9589439ef6bc530809`，size 664818 |
+| 验证 | `manifest.json` 200 + `application/json`；`latest.apk` 200 + `application/vnd.android.package-archive` + content-length 664818；**从公网下载再算 sha256 = manifest 里的值**（端到端过了） |
+| 服务 | nginx / club / redis / postgresql-17 全部 active；首页 200 |
+
+**为什么这样就安全了**：`data` 在更新器的 `SYNC_EXCLUDES` 里，之后的自动更新不会再删这个目录。
+（已加进 `scripts/publish-apk.sh` 的默认 `--dir` 与 `scripts/nginx-app-update.conf` 的 alias，
+下次换机器不会重犯。）
 
 ## 2. 发一版新 APK（L2）
 
 ```bash
-# 在服务器上（或任何能写 /opt/club/app-update 的机器）
+# 在服务器上（或任何能写 /opt/club/data/app-update 的机器）
 bash scripts/publish-apk.sh \
   --apk /tmp/app-release.apk \
   --version-code 2 \
   --version-name 0.2.0 \
   --notes "新增：文件上传与下载支持"
+
+# 发完做端到端核对：下载回来的包哈希必须等于脚本打印的 APK_SHA
+curl -skSL https://8.153.145.175/app-update/latest.apk | sha256sum
 ```
 
 脚本会算出 sha256、把包复制成 `latest.apk`、更新 `manifest.json` 的 `latest` 字段，
-其余字段（开关、公告、起始路由、停用版本）保持不动。
+其余字段（开关、公告、起始路由、停用版本）保持不动；同时把权限设成
+「目录 0755 + 文件 0644」（nginx 以 `nginx` 用户读文件，0640 root:root 会 403）。
 
 > 注意脚本用 `install -m 0640` 落盘，默认属主是当前用户；用 `--dir` 指定目录时若需要
 > worker 可读，请自行 `chown root:nginx`（或你的 worker 用户）。

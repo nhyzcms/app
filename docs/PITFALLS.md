@@ -295,6 +295,14 @@ val s = """"{"a":1}""""
 
 - **URL 模板不能过 `build_absolute_uri`**：`{z}` 会被转义成 `%7Bz%7D`，前端换不上、瓦片全 404。需要用只拼前缀的 `_absolute_raw`。
 - **SPA 入口 HTML 缺 `Cache-Control: no-cache`**：会让"网站发版即生效"（L0 热更新）迟滞 —— 壳层能做的就是每次冷启动 `clearCache(true)`（已实现），网站侧修才是根治。
+- **更新器是 rsync `--delete` 语义，会删掉 `/opt/club` 下"它不认识"的目录**（2026-10-17 实测）：
+  网站自动更新把发布包解压树镜像到 `/opt/club`，只有 `SYNC_EXCLUDES`
+  （`.env` / `db.sqlite3*` / `media` / `private_media` / `data` / `run` / `backups` / `.venv` / `.git`）
+  里的顶层条目会被保留，其余顶层条目**会被删除**。
+  → 我们的自托管 APK 目录最初放在 `/opt/club/app-update/`，被 00:42 的更新删掉、端点 404；
+  现改为 **`/opt/club/data/app-update/`**（`data` 是网站侧统一数据根、在排除项里，安全）。
+  教训：**任何要长期留在服务器上的东西，必须放在 `/opt/club/data/` 或其它被排除的目录里**，
+  不要指望"更新器不会碰它"（CHUNK-03 里那个"未实测"的问题，答案就是会删）。
 - **nginx**：worker 用户是 `nginx`（**没有 `www-data`**）；`location` 内一旦用了 `add_header`，就**不再继承** server 级 `add_header` → HSTS / Alt-Svc 必须在 location 内重复声明。
 - **Django 侧**（网站仓库）曾踩：新增 `Meta.permissions` 必须同时写 `AlterModelOptions` 迁移，否则权限不落库；给模型加外键会让"批量 delete 的 fast-delete 优化"失效，并且某些"把 schema 迁到旧状态"的迁移测试如果不恢复，会影响后续测试。
 - **服务器参数**：2 核 / 2 GB / 3 Mbps。别在上面跑 Gradle、别在上面跑测试套件、别把大体积临时文件堆在 `/tmp`（该机器曾因多个 clone 把 `/tmp` 撑到 1.2 GB）。
@@ -327,5 +335,8 @@ VERSION_CODE=2 VERSION_NAME=0.2.0 gradle :app:assembleDebug
 ## 10. 变更记录
 
 - **2026-10-14**：初版。汇总 2026-10-11 ~ 10-14 期间真实踩过并已修复的坑（构建、WebView、会话推送、上传下载、本地校验、协作流程、跨仓库）。
+- **2026-10-17**：新增 §1.9（Gradle 签名配置自赋值，只在 release 打包时才炸）；
+  §8 补「更新器 rsync `--delete` 语义会删掉 `/opt/club` 下未排除的目录，
+  自托管 APK 目录必须放 `data` 根」。
 
-<!-- EOF-SENTINEL-PITFALLS-20261014 -->
+<!-- EOF-SENTINEL-PITFALLS-20261017 -->
