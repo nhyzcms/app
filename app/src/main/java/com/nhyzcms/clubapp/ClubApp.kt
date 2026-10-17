@@ -18,8 +18,6 @@ import com.nhyzcms.clubapp.shell.push.PushNotifications
  */
 class ClubApp : Application() {
 
-    private var pushHost: PushHost? = null
-
     override fun onCreate() {
         super.onCreate()
         CrashReporter.install(this)
@@ -27,5 +25,16 @@ class ClubApp : Application() {
         val host = PushHost(this, PushNotifications(this))
         host.install()
         pushHost = host
+    }
+
+    companion object {
+        /**
+         * 进程内唯一的推送接线器。
+         *
+         * 谁需要它：前台服务（进程被系统重启时唤醒看门狗，见 shell/push/PushService）
+         * 与 MainActivity（把「未读变化」转成网页事件，让站内红点即时刷新）。
+         */
+        var pushHost: PushHost? = null
+            private set
     }
 }

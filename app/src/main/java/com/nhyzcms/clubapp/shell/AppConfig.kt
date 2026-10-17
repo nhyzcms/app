@@ -42,6 +42,14 @@ object AppConfig {
     const val NOTIFICATION_CHANNEL_ID = "unread"
 
     /**
+     * 常驻后台（区块 5 补强）的前台服务通知渠道。
+     *
+     * 与「新消息」渠道分开：服务通知是**常驻、静音、不驱动角标**的，
+     * 若复用 NOTIFICATION_CHANNEL_ID，launcher 角标的语义会被它污染。
+     */
+    const val SERVICE_CHANNEL_ID = "push_service"
+
+    /**
      * 调试自检通知的**独立渠道**（只有 debug 包会用）。
      * 与未读渠道分开是有意的：自检要能弹出来让人看见，而它**不能**污染角标语义。
      */

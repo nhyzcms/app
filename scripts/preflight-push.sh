@@ -176,6 +176,31 @@ if [ -f "$NOTIF" ]; then
   fi
 fi
 
+# ── 10. 常驻后台（2026-10-17）────────────────────────────────────────
+#    用户要求「退到后台也要实时提醒」。这条链路**只有真机能验证**（后台被系统杀掉是静默失败），
+#    所以把关键约定钉在静态检查里：前台服务必须进前台、必须 START_STICKY、
+#    清单必须有类型与权限、以及 —— 最重要的一条 —— onActivityStopped 里不许再断连。
+if [ -f "$PUSH_DIR/PushService.kt" ]; then
+  grep -q 'startForeground' "$PUSH_DIR/PushService.kt" \
+    || err "PushService 必须在 onCreate 里 startForeground（Android 12+ 五秒内不进前台会崩）"
+  grep -q 'START_STICKY' "$PUSH_DIR/PushService.kt" \
+    || err "PushService 必须返回 START_STICKY（进程被系统回收后要能自己回来）"
+  grep -q 'foregroundServiceType="dataSync"' "$MANIFEST" \
+    || err "前台服务必须在清单里声明 foregroundServiceType（API 34 起强制）"
+  grep -q 'FOREGROUND_SERVICE_DATA_SYNC' "$MANIFEST" \
+    || err "声明 dataSync 类型就必须同时申请 FOREGROUND_SERVICE_DATA_SYNC"
+  if [ -f "$PUSH_DIR/PushHost.kt" ]; then
+    stopped_body=$(awk '/override fun onActivityStopped/{flag=1} flag{print} flag&&/^    \}$/{exit}' "$PUSH_DIR/PushHost.kt")
+    case "$stopped_body" in
+      *stopPush*) err "onActivityStopped 里不得 stopPush：退到后台要保活，断连就是「收不到提醒」的根因" ;;
+    esac
+    if grep -q 'ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS' "$PUSH_DIR/PushHost.kt"; then
+      grep -q 'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS' "$MANIFEST" \
+        || err "用了 ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS 就必须在清单声明该权限"
+    fi
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "[预检-push] 全部通过 ✅"
 else

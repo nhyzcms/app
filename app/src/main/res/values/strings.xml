@@ -15,6 +15,7 @@
     <string name="action_clear_cache">清除缓存（会登出）</string>
     <string name="action_cancel">取消</string>
     <string name="action_open_settings">去设置</string>
+    <string name="action_later">以后再说</string>
 
     <!-- 提示 -->
     <string name="toast_external_opened">已在系统浏览器打开</string>
@@ -120,6 +121,16 @@
     <string name="notif_dm">你有 %1$d 条未读私信，点击查看</string>
     <string name="notif_notice">你有 %1$d 条未读通知，点击查看</string>
     <string name="notif_mixed">%1$d 条未读私信、%2$d 条未读通知，点击查看</string>
+
+    <!-- 区块 5 补强（2026-10-17）：常驻后台的前台服务通知 + 电池优化引导 -->
+    <string name="notif_service_channel_name">消息提醒</string>
+    <string name="notif_service_channel_desc">保持与服务器的连接，退到后台也能及时收到新私信和通知</string>
+    <string name="notif_service_title">消息提醒已开启</string>
+    <string name="notif_service_text">有新私信或通知会立刻提醒你（点击回到应用）</string>
+    <string name="battery_title">允许后台运行</string>
+    <string name="battery_message">系统会限制后台应用的联网。允许「忽略电池优化」后，退到后台或锁屏时也能及时收到消息提醒。\n\n下一步是系统的确认对话框，选「允许」即可；此后可随时在系统设置里改回来。</string>
+    <string name="battery_allow">去允许</string>
+
 
     <!-- 区块 5 诊断：debug 包一次性自检通知（验证通知能否送达本机；独立渠道、不驱动角标） -->
     <string name="selftest_channel_name">推送自检（调试）</string>

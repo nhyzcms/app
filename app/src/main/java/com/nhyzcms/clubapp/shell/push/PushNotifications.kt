@@ -76,6 +76,51 @@ class PushNotifications(private val context: Context) {
     }
 
     /**
+     * 常驻后台（区块 5 补强）：前台服务的通知渠道。
+     *
+     * 为什么必须单独一条渠道：前台服务必须有一条**持续可见**的通知，而 launcher 的数字角标
+     * 来自「活动的通知」——若把服务通知塞进未读渠道，角标就会一直挂着、清不掉。
+     * 因此这里 IMPORTANCE_MIN + setShowBadge(false)，只起「告诉用户正在后台收消息」的作用。
+     */
+    fun ensureServiceChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        if (manager.getNotificationChannel(AppConfig.SERVICE_CHANNEL_ID) != null) return
+        val channel = NotificationChannel(
+            AppConfig.SERVICE_CHANNEL_ID,
+            context.getString(R.string.notif_service_channel_name),
+            NotificationManager.IMPORTANCE_MIN,
+        )
+        channel.description = context.getString(R.string.notif_service_channel_desc)
+        channel.setShowBadge(false)
+        channel.enableVibration(false)
+        channel.enableLights(false)
+        channel.setSound(null, null)
+        manager.createNotificationChannel(channel)
+    }
+
+    /** 前台服务用的常驻通知（START_STICKY 保活的生命周期与它绑定）。 */
+    fun buildServiceNotification(): Notification {
+        ensureServiceChannel()
+        return NotificationCompat.Builder(context, AppConfig.SERVICE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_club)
+            .setContentTitle(context.getString(R.string.notif_service_title))
+            .setContentText(context.getString(R.string.notif_service_text))
+            .setContentIntent(contentIntent("/#/m"))
+            .setOngoing(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
+    }
+
+    /** 服务停止时把常驻通知一起收掉（否则会留一条点不动的僵尸通知）。 */
+    fun hideService() {
+        runCatching { NotificationManagerCompat.from(context).cancel(SERVICE_ID) }
+    }
+
+    /**
      * 调试自检通知（只有 debug 包调用）：验证"通知能不能送达这台设备"。
      *
      * 走**独立渠道**（AppConfig.SELF_TEST_CHANNEL_ID）且 setShowBadge(false)：
@@ -155,13 +200,15 @@ class PushNotifications(private val context: Context) {
         return PendingIntent.getActivity(context, REQUEST_CODE, intent, flags)
     }
 
-    private companion object {
+    companion object {
         /** 固定通知 id：未读通知永远是"同一条"，只更新内容与数字。 */
         const val NOTIFICATION_ID = 1001
         /** 自检通知单独用一个 id，绝不复用未读通知那条（否则会把它顶掉）。 */
         const val SELF_TEST_ID = 1002
         /** 诊断通知（debug）：永远更新同一条，不刷屏。 */
         const val DIAG_ID = 1003
+        /** 常驻后台的前台服务通知（不能复用未读那条，否则会互相顶掉）。 */
+        const val SERVICE_ID = 1004
         const val REQUEST_CODE = 2001
     }
 }
