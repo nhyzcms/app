@@ -130,6 +130,13 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.webkit:webkit:1.12.1")   // 后续 JS 桥接（WebMessageListener）用
 
+    // 区块 8（原生扫码）：ZXing 解码 + 相机取景（CaptureActivity / DecoratedBarcodeView）。
+    // 为什么不直接在 WebView 里调摄像头：国产 ROM 上 WebView 的 getUserMedia 极不稳定，
+    // 而网页侧扫码还要按需下载 ~950 KB 的 wasm（服务器只有 3 M 带宽）；原生解码更快也更稳。
+    // 体积代价：zxing-android-embedded ≈150 KB + zxing core ≈600 KB（未压缩），
+    // APK 约 +0.7 MB —— 换来「取景框立刻出来、扫完才发一次请求」。
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
     // 仅测试类路径（不进 APK）：区块 2 起的纯逻辑单测（UploadLimit / DownloadPolicy / LongPressPolicy /
     // PermissionsPolicy / NavPolicy）。理由：本仓库没有本地 Android 构建环境，CI 是唯一能验证的地方，
     // 纯函数不该只靠人眼审查（见 docs/chunks/CHUNK-02-REPORT.md §2.7）。

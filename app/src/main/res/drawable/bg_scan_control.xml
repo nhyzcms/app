@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 扫码页顶部按钮的圆底：黑色半透明，保证在任何取景画面上都看得见。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/scan_control_scrim" />
+</shape>

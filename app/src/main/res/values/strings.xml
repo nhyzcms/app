@@ -140,4 +140,15 @@
     <string name="selftest_title">推送自检</string>
     <string name="selftest_text">看到这条说明通知可用。若没看到，说明系统把通知拦了——请到「设置 → 通知」里允许本应用通知。</string>
     <string name="selftest_diag_title">推送状态（调试）</string>
+
+    <!-- 扫码核验（原生扫码：工牌二维码 / Code128 条码） -->
+    <string name="cd_scan_member">扫码核验社员身份</string>
+    <string name="scan_title">扫码核验身份</string>
+    <string name="scan_prompt">把工牌上的二维码或条形码放进取景框</string>
+    <string name="scan_close">关闭扫码</string>
+    <string name="scan_torch">手电筒</string>
+    <string name="toast_scan_no_camera">这台设备没有可用的摄像头</string>
+    <string name="toast_scan_not_badge">扫到的内容不是本站工牌</string>
+    <string name="scan_camera_denied_title">无法打开扫码</string>
+    <string name="scan_camera_denied_message">扫码核验需要相机权限。可以到系统设置里允许相机，或回到「社员查询」手动输入编号。</string>
 </resources>

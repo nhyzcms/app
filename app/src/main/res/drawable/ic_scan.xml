@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「扫码核验」按钮图标：四角取景框 + 中间三条码纹（与网站扫码图标的语义一致）。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:tint="@color/fab_scan_icon"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,9 L3,5 A2,2 0 0 1 5,3 L9,3 L9,5 L5,5 L5,9 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M15,3 L19,3 A2,2 0 0 1 21,5 L21,9 L19,9 L19,5 L15,5 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M21,15 L21,19 A2,2 0 0 1 19,21 L15,21 L15,19 L19,19 L19,15 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9,21 L5,21 A2,2 0 0 1 3,19 L3,15 L5,15 L5,19 L9,19 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7,10 L8.6,10 L8.6,14 L7,14 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11,10 L12,10 L12,14 L11,14 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14.4,10 L16,10 L16,14 L14.4,14 Z" />
+</vector>

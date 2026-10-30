@@ -116,6 +116,22 @@
         </activity>
 
         <!--
+          原生扫码（区块 8 增补）：扫工牌二维码 / Code128 条码，扫到的文本交给
+          shell/scan/ScanRouter 决定落到站内哪个页面（业务判断仍在网页）。
+
+          · exported=false：只由 MainActivity 启动，外部应用不能拉起；
+          · screenOrientation=portrait：库自带的 CaptureActivity 是 sensorLandscape，
+            凑近工牌扫描竖屏更顺手；
+          · theme：黑底相机页（Theme_ClubApp_Scan）。
+        -->
+        <activity
+            android:name=".shell.scan.ScanActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme_ClubApp_Scan"
+            android:windowSoftInputMode="stateAlwaysHidden" />
+
+        <!--
           常驻后台（区块 5 补强）：用户退到界面外后，由这个前台服务把进程与 WS 连接保活，
           从而「有新私信/通知就立刻提醒」。此前 onActivityStopped 里直接断开连接，
           因此 App 一退到后台就再也收不到东西（2026-10-17 管理员反馈）。

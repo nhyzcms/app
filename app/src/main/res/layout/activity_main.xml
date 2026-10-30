@@ -75,6 +75,24 @@
         android:progressTint="@color/brand"
         android:visibility="gone" />
 
+    <!--
+      扫码核验（区块 8 增补）：常驻在返回顶部按钮上方，页面加载完成后出现。
+      显隐判定见 shell/scan/ScanEntryPolicy（清单开关 showScanEntry 可远程关掉）。
+    -->
+    <ImageView
+        android:id="@+id/scanButton"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="18dp"
+        android:layout_marginBottom="84dp"
+        android:background="@drawable/bg_fab_scan"
+        android:contentDescription="@string/cd_scan_member"
+        android:elevation="6dp"
+        android:padding="10dp"
+        android:src="@drawable/ic_scan"
+        android:visibility="gone" />
+
     <!-- 返回顶部：滚过阈值才出现（判定见 shell/feel/FabPolicy） -->
     <ImageView
         android:id="@+id/fabButton"
