@@ -13,6 +13,9 @@
 - 网站发版（Django 后端 / React 前端）→ **App 重新加载即生效，无需重新下载安装包**（热更新）；
 - 只有「原生能力变化」（新权限、新桥接接口、安全修复）才需要发新 APK（冷更新）。
 
+壳里的原生能力目前只有这些：`input[type=file]` 选文件 / 拍照、下载落盘、长按保存分享、
+三级更新、消息角标与常驻后台、**工牌扫码核验**（见 [docs/SCAN.md](docs/SCAN.md)）。
+
 详细的更新模型见 [`docs/UPDATE-STRATEGY.md`](docs/UPDATE-STRATEGY.md)。
 
 ## 2. 为什么不用 Electron / Capacitor
@@ -100,6 +103,10 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
     │   │       │   ├── SessionCookies.kt        会话 Cookie 快照（只在主线程取）
     │   │       │   ├── PushNotifications.kt     静音通知 + launcher 角标
     │   │       │   └── PushHost.kt              前后台生命周期接线（MainActivity 零改动）
+    │   │       ├── scan/                    原生扫码（工牌二维码 / Code128）
+    │   │       │   ├── ScanActivity.kt          取景页：竖屏 + 手电筒（解码复用 ZXing）
+    │   │       │   ├── ScanRouter.kt            扫到的文本 → 站内落点（纯函数，有单测）
+    │   │       │   └── ScanEntryPolicy.kt       扫码圆钮的显隐（纯函数，有单测）
     │   │       └── update/                  区块 3：三级更新（L0 热 / L1 清单 / L2 自升级）
     │   │           ├── MiniJson.kt              零依赖 JSON 解析（可单测）
     │   │           ├── UpdateManifest.kt        清单数据模型 + 解析（字段级容错）
@@ -186,7 +193,8 @@ gradle :app:testDebugUnitTest
   - 文件选择走系统 SAF、分享图片走 App 缓存，都不需要读取类权限；
   - `WRITE_EXTERNAL_STORAGE` **只在 Android 8/9 上**用来把下载写进公共「下载」目录
     （`maxSdkVersion="28"`，且仅在下载时申请；拒了退 App 目录），preflight 会强制校验这个限定；
-  - `CAMERA` 只在“将要提供拍照入口”时申请；
+  - `CAMERA` 两个用途：拍照上传、**扫码核验工牌**；都是用户点下去才申请，拒绝后给中文引导
+    （扫码被拒时可直达系统设置，拍照被拒则退化为只能选文件）；
   - `POST_NOTIFICATIONS`（区块 5）：Android 13+ 进 App 约 4 秒后弹一次，用于未读通知与 launcher 角标；
     拒绝则不发通知、无角标，网页内徽标照常（绝不反复弹窗）；
   - `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_DATA_SYNC`（2026-10-17 常驻后台）：登录后用前台服务把
@@ -224,6 +232,11 @@ gradle :app:testDebugUnitTest
 
 分块依据与验收标准见 [`docs/ROADMAP.md`](docs/ROADMAP.md)，功能台账见 [`docs/FEATURE-MATRIX.md`](docs/FEATURE-MATRIX.md)。
 
+> **2026-10-30 增补（原生扫码）**：右下角品牌色扫码圆钮 + 原生竖屏取景页（QR_CODE / CODE_128），
+> 扫完工牌后落到网页的 `/#/v` 深链接，**查询与结果卡全部复用网站实现**（壳里不复制业务）。
+> 网站侧配套是「`/#/v` 支持 `?q=` 深链接」那个 PR。🟡 代码就绪（CI 绿），待真机验收 ——
+> 8 条清单与契约见 [docs/SCAN.md](docs/SCAN.md)。
+
 > **2026-10-12 真机联调**：首次真机安装暴露了三起底层故障（启动闪退 / 黑白屏 / 证书链的根不在老设备信任库），
 > 已由 PR #10~#13 修复；区块 1~4 随后由管理员在真机上**全部验收通过**（M1「可用」达成）。
 > 故障报告见 [FIX-20261012-STARTUP-CRASH.md](docs/FIX-20261012-STARTUP-CRASH.md)、
@@ -257,6 +270,7 @@ gradle :app:testDebugUnitTest
 | [APP-MANIFEST.md](docs/APP-MANIFEST.md) | 远程配置清单字段契约 |
 | [FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md) | 网站功能覆盖台账 |
 | [PUSH-CONTRACT.md](docs/PUSH-CONTRACT.md) | 跨仓库实时消息契约（连接 / 事件 / 未读接口 / 深链） |
+| [SCAN.md](docs/SCAN.md) | 原生扫码核验：入口位置、落点契约、安全边界、真机验收清单 |
 | [chunks/CHUNK-02-REPORT.md](docs/chunks/CHUNK-02-REPORT.md) | 区块 2（文件/拍照/下载/长按/分享）交付说明 |
 | [chunks/CHUNK-03-REPORT.md](docs/chunks/CHUNK-03-REPORT.md) | 区块 3（三级更新）交付说明与服务器配置步骤 |
 | [chunks/CHUNK-04-REPORT.md](docs/chunks/CHUNK-04-REPORT.md) | 区块 4（原生手感）交付说明与真机验收清单 |

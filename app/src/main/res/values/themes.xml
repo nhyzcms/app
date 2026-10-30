@@ -36,4 +36,17 @@
     <style name="Theme_ClubApp" parent="Theme_ClubApp_Splash">
         <item name="android:windowBackground">@color/window_background</item>
     </style>
+
+    <!--
+      扫码页（区块 8 增补）：相机取景页恒为黑底，系统栏图标反过来用浅色。
+      父主题故意用系统 Material（而非 Theme_ClubApp_Base）：ScanActivity 继承自
+      ZXing 的 CaptureActivity（普通 Activity，不是 AppCompatActivity），
+      用 AppCompat 主题会在没有 AppCompatDelegate 的情况下引入不必要的依赖假设。
+    -->
+    <style name="Theme_ClubApp_Scan" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/scan_background</item>
+        <item name="android:statusBarColor">@color/scan_background</item>
+        <item name="android:navigationBarColor">@color/scan_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>

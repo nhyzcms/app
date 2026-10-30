@@ -72,6 +72,9 @@ data class UpdateManifest(
             // 区块 6（弱网与性能）：壳侧拦截 Live2D 素材（约 60 MB）。
             // 网站侧已按视口宽度不挂载看板娘，这层是兜底；远程置 false 可关掉拦截。
             "blockLive2dAssets" to true,
+            // 区块 8（原生扫码）：右下角「扫码核验」按钮。
+            // 置 false 即整颗按钮消失（原生扫码页也就不再可达），不发版就能撤。
+            "showScanEntry" to true,
         )
     }
 }

@@ -121,12 +121,29 @@
 
 ---
 
-## 7. 资源清单（`app/src/main/res/`）
+## 7. 原生扫码（`shell/scan/`，区块 8 增补）
+
+| 文件 | 职责 | 关键约束 |
+|---|---|---|
+| `ScanActivity.kt` | 取景页：继承库的 `CaptureActivity`，只换布局 + 关闭钮 + 手电筒；解码/对焦/旋转/结果回传全交给 ZXing | 竖屏、黑底；手电筒状态**不做**跨重建记忆（恢复时机常赶在相机 open 前，会「按钮亮着灯没开」） |
+| `ScanRouter.kt` | 扫到的文本 → 站内落点；不是本站工牌就返回 null | **纯逻辑 + 单测**；只认 host = `AppConfig.SITE_HOST`、8/12 位数字、≤256 字符 |
+| `ScanEntryPolicy.kt` | 右下角扫码圆钮的显隐（清单开关 / 首屏画完 / 无错误面板） | **纯逻辑 + 单测**；开关名 `showScanEntry` 见 `docs/APP-MANIFEST.md` |
+
+- 接线只在 `MainActivity`：`scanLauncher`（结果）+ `scanPermissionLauncher`（相机权限）+ `bindScanEntry()`。
+- **扫到的文本只能当网址**：壳内执行 JS 只允许常量（SECURITY §4.1），`preflight-scan.sh` 禁止扫码模块出现 `evaluateJavascript`。
+- 一个坑：站内 `/#/...` 之间的跳转只改 hash，WebView **不回调** `onPageFinished`；所以 `openScannedText()` 之后排了 600 ms 的 `settleSameDocument` 收尾（详见 `docs/SCAN.md` §5）。
+
+---
+
+## 8. 资源清单（`app/src/main/res/`）
 
 | 路径 | 说明 |
 |---|---|
-| `layout/activity_main.xml` | 唯一布局：WebView + 骨架 + FAB + 诊断浮层 |
+| `layout/activity_main.xml` | 唯一布局：WebView + 骨架 + 返回顶部 FAB + **扫码圆钮** + 诊断浮层 |
+| `layout/activity_scan.xml` | 扫码取景页：ZXing 取景框 + 标题/关闭/手电筒（竖屏） |
 | `drawable/bg_fab.xml`、`ic_arrow_up.xml` | 返回顶部 FAB（矢量，不引位图） |
+| `drawable/bg_fab_scan.xml`、`ic_scan.xml` | 扫码圆钮（品牌色椭圆 + 四角取景框图标） |
+| `drawable/bg_scan_control.xml`、`ic_close.xml`、`ic_torch.xml` | 扫码页顶部按钮（半透明黑圆底 + 白图标） |
 | `drawable/bg_skeleton_block.xml` | 首屏骨架块 |
 | `drawable/splash_background.xml` | 启动页背景（layer-list，API 26–30） |
 | `drawable/ic_stat_club.xml` | 通知小图标（单色） |
@@ -134,7 +151,7 @@
 | `mipmap-anydpi-v26/ic_launcher*.xml`、`mipmap-anydpi-v33/ic_launcher*.xml` | 自适应/主题化图标（v33 = 主题图标） |
 | `values/colors.xml`、`values-night/colors.xml` | 品牌色与深色覆盖（品牌色取自站点 `cobalt.css`） |
 | `values/bools.xml`、`values-night/bools.xml` | 深浅色差异用 **bool/color** 表达（不另建 `values-night/themes.xml`） |
-| `values/themes.xml`、`values-v31/themes.xml` | `Theme_ClubApp` / `Theme_ClubApp_Splash`（**名字用下划线**） |
+| `values/themes.xml`、`values-v31/themes.xml` | `Theme_ClubApp` / `Theme_ClubApp_Splash` / `Theme_ClubApp_Scan`（**名字用下划线**） |
 | `values/strings.xml` | 全部文案（含错误面板、诊断文案） |
 | `values/ic_launcher_background.xml` | 图标底色 |
 | `xml/network_security_config.xml` | 禁明文 + **额外信任锚 `sectigo_r46`**（`base-config` 与 `debug-overrides` **两处**） |
@@ -144,7 +161,7 @@
 
 ---
 
-## 8. 单测清单（`app/src/test/java/com/nhyzcms/clubapp/`，共 27 个文件）
+## 9. 单测清单（`app/src/test/java/com/nhyzcms/clubapp/`，共 29 个文件）
 
 > 全部是**纯逻辑**测试（JVM，不需要设备）。本地可用 `/workspace/klocaltest.sh` 直接跑（约 40 s，236 用例）。
 
@@ -155,6 +172,7 @@
 `shell/perf/`：`CacheTrimPolicyTest`、`DeviceClassifierTest`、`HeavyAssetPolicyTest`
 `shell/push/`：`PushPolicyTest`、`PushProtocolTest`、`UnreadBadgeTest`、`WsFrameTest`、`WsHandshakeTest`
 `shell/update/`：`ApkDigestTest`、`MiniJsonTest`、`UpdateManifestTest`、`UpdatePolicyTest`
+`shell/scan/`：`ScanRouterTest`、`ScanEntryPolicyTest`
 
 **新增纯逻辑文件时**：
 1. 写单测；
@@ -163,7 +181,7 @@
 
 ---
 
-## 9. 构建、脚本与 CI
+## 10. 构建、脚本与 CI
 
 | 路径 | 说明 |
 |---|---|
@@ -173,6 +191,7 @@
 | `scripts/preflight-feel.sh` | 手感层预检，**连带执行同目录 `preflight-*.sh`** |
 | `scripts/preflight-push.sh` | 推送层规则（诊断必须走 `PushDiagnostics`、debug 限定、独立渠道…） |
 | `scripts/preflight-perf.sh` | 性能层规则（拦截白名单、主文档不拦…） |
+| `scripts/preflight-scan.sh` | 扫码层规则（只认 QR/Code128、必须走自己的取景页、结果不得进 JS、主机白名单…） |
 | `scripts/preflight-signing.sh` | 签名层规则（登记指纹格式、闸门未被删、Secret 名齐全、口令不得 echo/入库） |
 | `scripts/ci-prepare-android-sdk.sh` | CI 侧准备 SDK（直接写 licenses，绕过 `sdkmanager --licenses`） |
 | `scripts/ci-extract-errors.sh` | 从日志抽关键报错，贴成 PR 评论 |
@@ -185,7 +204,7 @@
 
 ---
 
-## 10. "我要改 X" 索引表（最高频的 12 件事）
+## 11. "我要改 X" 索引表（最高频的 12 件事）
 
 | 我想…… | 该动 |
 |---|---|
@@ -196,6 +215,7 @@
 | 改下载落盘位置规则 | `shell/DownloadPolicy.kt`（**唯一收口点**） |
 | 改"哪些外部链接交浏览器" | `shell/NavPolicy.kt` + `AppConfig` 的开关键 |
 | 改 Live2D 拦截范围 | `shell/AppConfig.kt::BLOCKED_ASSET_PREFIXES`（+ `HeavyAssetPolicy` 无需改） |
+| 改扫码落点 / 加一种码 | `shell/scan/ScanRouter.kt`（+ `ScanRouterTest`）；格式清单在 `MainActivity.launchScanner()` |
 | 加一个远程开关 | `docs/APP-MANIFEST.md`（契约）+ `shell/update/UpdateManifest.kt` + `UpdatePolicy.mergeFlags`；**不改名，只新增** |
 | 改首屏看护阈值 | `shell/feel/RenderWatchPolicy.kt` / `ProbeCadence.kt`（都带单测） |
 | 改图标/品牌色 | `res/values/colors.xml` + `res/drawable/ic_launcher_foreground.xml` |
@@ -205,7 +225,7 @@
 
 ---
 
-## 11. 文档地图（该写哪儿）
+## 12. 文档地图（该写哪儿）
 
 | 文档 | 定位 |
 |---|---|
@@ -220,12 +240,13 @@
 | `docs/APP-MANIFEST.md` | 远程清单字段契约 |
 | `docs/PUSH-CONTRACT.md` | 与后端 WS 的事件契约 |
 | `docs/FEATURE-MATRIX.md` | 功能 × 验证状态矩阵 |
+| `docs/SCAN.md` | 原生扫码核验：入口、落点契约、安全边界、真机验收清单 |
 | `docs/FIX-2026*.md` | 单次故障的深度复盘（按时间） |
 | `docs/chunks/CHUNK-0N-*.md` | 每个区块的交付报告（历史记录；其中"推送上限/临时通道"的结论已过时，见 ENGINEERING-ENV §1.3） |
 
 ---
 
-## 12. 变更记录
+## 13. 变更记录
 
 - **2026-10-14**：初版。按"文件 → 职责 → 约束"整理全仓 57 个 main 源文件、27 个测试文件、
   资源与脚本，并给出"改 X 动哪里"的索引表与文档地图。
@@ -237,5 +258,8 @@
   `/opt/club/data/app-update/`（原路径会被网站更新器 rsync `--delete` 删掉），
   `scripts/publish-apk.sh` 默认目录与权限（0755/0644）随之修正，
   `scripts/nginx-app-update.conf` 的 alias 同步更新（见 [PITFALLS §8](PITFALLS.md)）。
+- **2026-10-30（区块 8 增补：原生扫码）**：新增 `shell/scan/`（`ScanActivity` / `ScanRouter` /
+  `ScanEntryPolicy`）、`preflight-scan.sh`、`docs/SCAN.md`；`MainActivity` 接入扫码圆钮与结果落点；
+  `zxing-android-embedded` 依赖（APK 约 +0.7 MB）。站点侧配套是网站仓库的「`/#/v` 支持 `?q=`」PR。
 
 <!-- EOF-SENTINEL-CODE-MAP-20261017 -->

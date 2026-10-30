@@ -27,4 +27,11 @@
     <!-- 区块 4：返回顶部浮动按钮 -->
     <color name="fab_background">#FFFFFF</color>
     <color name="fab_icon">#0756A2</color>
+
+    <!-- 扫码核验：白色图标压在品牌色圆底上，浅色 / 深色都够对比，不单列 values-night -->
+    <color name="fab_scan_icon">#FFFFFF</color>
+    <!-- 扫码页恒为黑底（相机取景），顶部按钮用半透明黑圆底，任何画面下都看得清 -->
+    <color name="scan_background">#000000</color>
+    <color name="scan_control_scrim">#66000000</color>
+    <color name="scan_control_icon">#FFFFFF</color>
 </resources>

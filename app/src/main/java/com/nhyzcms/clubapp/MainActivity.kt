@@ -32,6 +32,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.journeyapps.barcodescanner.ScanIntentResult
+import com.journeyapps.barcodescanner.ScanOptions
 import com.nhyzcms.clubapp.shell.AppConfig
 import com.nhyzcms.clubapp.shell.CameraCapture
 import com.nhyzcms.clubapp.shell.DownloadPolicy
@@ -52,6 +54,9 @@ import com.nhyzcms.clubapp.shell.feel.BackExitPolicy
 import com.nhyzcms.clubapp.shell.feel.FeelHost
 import com.nhyzcms.clubapp.shell.feel.ScrollAwareWebView
 import com.nhyzcms.clubapp.shell.perf.PerfHost
+import com.nhyzcms.clubapp.shell.scan.ScanActivity
+import com.nhyzcms.clubapp.shell.scan.ScanEntryPolicy
+import com.nhyzcms.clubapp.shell.scan.ScanRouter
 import com.nhyzcms.clubapp.shell.update.UpdateController
 import com.nhyzcms.clubapp.shell.update.UpdatePolicy
 
@@ -81,6 +86,11 @@ import com.nhyzcms.clubapp.shell.update.UpdatePolicy
  *   ① 大资源兜底拦截（Live2D 素材 ~60 MB）→ [PerfHost.interceptHeavyAsset]
  *   ② 设备分级：低内存/存储紧张 → 探测放缓、内存缓存该清就清
  *   ③ 缓存清理时机（只在空间紧张或太久没清时动，别把长缓存白扔）
+ *
+ * 区块 8 新增的原生扫码（逻辑在 shell/scan，本类只留调用点）：
+ *   ① 右下角「扫码核验」按钮（清单开关 showScanEntry）→ [ScanEntryPolicy]
+ *   ② 原生取景页扫工牌二维码 / Code128 条码 → [ScanActivity]
+ *   ③ 扫到的文本决定落到站内哪一页（`/#/v`…）→ [ScanRouter]，业务判断仍在网页
  */
 class MainActivity : AppCompatActivity() {
 
@@ -98,6 +108,27 @@ class MainActivity : AppCompatActivity() {
 
     /** 区块 4：返回顶部按钮（清单开关 showBackToTop）。 */
     private lateinit var fabButton: ImageView
+
+    /** 区块 8：扫码核验按钮（清单开关 showScanEntry）。 */
+    private lateinit var scanButton: ImageView
+
+    /** 网页首屏是否已经画出来：扫码按钮要等它（判定见 [ScanEntryPolicy]）。 */
+    private var pageLoaded = false
+
+    /**
+     * 「只改 # 片段」的导航收尾（见 [openScannedText]）。
+     *
+     * 站内地址都是 `https://host/#/...`：从 `/#/m` 跳到 `/#/v?q=` 只有片段变了，
+     * WebView 不触发 onPageFinished，进度条会一直转、扫码按钮一直藏着。
+     * 这种导航不产生网络请求，稍等一会儿自己收尾即可。
+     */
+    private val settleSameDocument = Runnable {
+        if (isFinishing || isDestroyed || pageLoaded) return@Runnable
+        pageLoaded = true
+        progress.visibility = View.GONE
+        feel.onPageRendered()
+        refreshScanEntry()
+    }
 
     /** 最后一次加载或失败的地址，供“重试”与“用浏览器打开”使用。 */
     private var lastUrl: String = AppConfig.START_URL
@@ -179,6 +210,26 @@ class MainActivity : AppCompatActivity() {
             startDownloadNow(pending, writePermissionGranted = granted)
         }
 
+    /**
+     * 扫码结果（区块 8）：只把文本交给 [ScanRouter] 决定落点。
+     * 用户按返回 / 没识别出东西时是 RESULT_CANCELED，什么都不做。
+     */
+    private val scanLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            // RESULT_OK 时 data 理论上有值（库自己 setResult），但别赌：NPE 会直接闪退。
+            val data = result.data
+            if (result.resultCode != RESULT_OK || data == null) return@registerForActivityResult
+            val contents = ScanIntentResult.parseActivityResult(result.resultCode, data).contents
+            if (contents.isNullOrBlank()) return@registerForActivityResult
+            openScannedText(contents)
+        }
+
+    /** 扫码前的相机权限：拒绝后引导到设置（不反复弹系统对话框）。 */
+    private val scanPermissionLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) launchScanner() else explainScanCameraDenied()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // 区块 4：先把清单里的启动页主题切回常规主题（Activity 的 theme 是 Theme.ClubApp.Splash）。
         // ⚠️ 必须在 super.onCreate 之前调用：窗口背景一旦按启动页主题定下来就不会再变。
@@ -220,6 +271,7 @@ class MainActivity : AppCompatActivity() {
         feel.configure()
 
         configureWebView()
+        bindScanEntry()
         bindPushBridge()
         registerBackCallback()
         bindErrorPanelActions()
@@ -237,7 +289,9 @@ class MainActivity : AppCompatActivity() {
             load(intentUrlOrNull(intent) ?: updates.startUrl())
         } else {
             // 恢复历史：内容马上就有，直接算作已加载（下拉刷新 / 返回顶部按钮据此生效）。
+            pageLoaded = true
             feel.onPageRendered()
+            refreshScanEntry()
         }
 
         // 更新包残留清理 + 冷启动后延迟几秒检查（不抢首屏带宽：服务器只有 3 M）
@@ -327,9 +381,13 @@ class MainActivity : AppCompatActivity() {
                 Log.w(TAG, "拦截导航：$reason")
                 toast(R.string.toast_link_blocked)
             },
-            onPageStarted = { hideError() },
+            onPageStarted = {
+                pageLoaded = false
+                hideError()
+            },
             onPageFinished = {
                 progress.visibility = View.GONE
+                pageLoaded = true
                 hideError()
                 feel.onPageRendered()
             },
@@ -499,6 +557,76 @@ class MainActivity : AppCompatActivity() {
             Uri.fromParts("package", packageName, null),
         )
         runCatching { startActivity(intent) }
+    }
+
+    // ── 扫码核验（区块 8）────────────────────────────────────────────────────
+
+    private fun bindScanEntry() {
+        scanButton = findViewById(R.id.scanButton)
+        scanButton.setOnClickListener { startScan() }
+        refreshScanEntry()
+    }
+
+    /** 按钮显隐的唯一入口（页面开始/完成加载、错误面板开关、回到前台都走这里）。 */
+    private fun refreshScanEntry() {
+        if (!::scanButton.isInitialized) return
+        val show = ScanEntryPolicy.shouldShow(
+            flagEnabled = UpdatePolicy.flag(updates.flags(), FLAG_SCAN_ENTRY, true),
+            pageLoaded = pageLoaded,
+            errorVisible = errorPanel.visibility == View.VISIBLE,
+        )
+        scanButton.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    private fun startScan() {
+        if (!hasCameraHardware()) {
+            toast(R.string.toast_scan_no_camera)
+            return
+        }
+        if (!hasCameraPermission()) {
+            scanPermissionLauncher.launch(PermissionsPolicy.CAMERA)
+            return
+        }
+        launchScanner()
+    }
+
+    /**
+     * 打开原生取景页。只认两种码：工牌二维码（QR_CODE）与工牌条码（CODE_128）——
+     * 收敛格式能让每帧少跑几轮解码，低端机跟手（网页侧同理）。
+     */
+    private fun launchScanner() {
+        val options = ScanOptions()
+            .setCaptureActivity(ScanActivity::class.java)
+            .setDesiredBarcodeFormats(listOf(ScanOptions.QR_CODE, ScanOptions.CODE_128))
+            .setPrompt(getString(R.string.scan_prompt))
+            .setBeepEnabled(true)
+            .setOrientationLocked(true)
+        try {
+            scanLauncher.launch(options.createScanIntent(this))
+        } catch (e: ActivityNotFoundException) {
+            // 相机页被 ROM 禁用等极端情况：别把用户留在原地什么都不发生。
+            toast(R.string.toast_scan_no_camera)
+        }
+    }
+
+    private fun explainScanCameraDenied() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.scan_camera_denied_title)
+            .setMessage(R.string.scan_camera_denied_message)
+            .setPositiveButton(R.string.action_open_settings) { _, _ -> openAppSettings() }
+            .setNegativeButton(R.string.action_cancel, null)
+            .show()
+    }
+
+    /** 扫码文本 → 站内地址（[ScanRouter] 纯逻辑），不是本站工牌就提示一句。 */
+    private fun openScannedText(raw: String) {
+        val url = ScanRouter.targetUrl(AppConfig.SITE_ORIGIN, AppConfig.SITE_HOST, raw) ?: run {
+            toast(R.string.toast_scan_not_badge)
+            return
+        }
+        load(url)
+        // 这条路径只是换 hash（见 [settleSameDocument]）：不排这一下，加载态就收不回来。
+        webView.postDelayed(settleSameDocument, SAME_DOCUMENT_SETTLE_MS)
     }
 
     // ── 下载（区块 2）───────────────────────────────────────────────────────
@@ -705,6 +833,7 @@ class MainActivity : AppCompatActivity() {
         )
         errorPanel.visibility = View.VISIBLE
         progress.visibility = View.GONE
+        refreshScanEntry()
         // 区块 4：错误面板盖着时不该再有刷新圈或悬浮按钮（重试按钮才是唯一出路）。
         feel.onErrorPanelChanged(visible = true)
 
@@ -716,12 +845,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun hideError() {
         errorPanel.visibility = View.GONE
+        refreshScanEntry()
     }
 
     // ── 导航与生命周期 ────────────────────────────────────────────────
 
     private fun load(url: String) {
         lastUrl = url
+        pageLoaded = false
         hideError()
         progress.visibility = View.VISIBLE
         webView.loadUrl(url)
@@ -754,6 +885,7 @@ class MainActivity : AppCompatActivity() {
         // 区块 4：回到前台才开始探测网页主题/滚动（站内切换深色后状态栏能跟上）
         feel.onResume()
         updates.checkIfDue() // 回到前台按 30 分钟节流检查更新（区块 3）
+        refreshScanEntry() // 清单开关可能刚拉到（扫码按钮显隐据此）
     }
 
     override fun onPause() {
@@ -785,6 +917,9 @@ class MainActivity : AppCompatActivity() {
 
         // 区块 4：停掉网页状态探测，避免 Handler 继续持有即将销毁的 WebView
         feel.dispose()
+
+        // 区块 8：撤掉还没执行的「hash 导航收尾」，别让它持有已销毁的 Activity
+        webView.removeCallbacks(settleSameDocument)
 
         // 区块 5 补强：解除网页事件桥，避免 Application 持有已销毁的 Activity
         ClubApp.pushHost?.onUnreadChanged = null
@@ -821,5 +956,14 @@ class MainActivity : AppCompatActivity() {
 
     private companion object {
         const val TAG = "ClubApp"
+
+        /** 清单开关：扫码核验按钮（默认开，见 docs/APP-MANIFEST.md）。 */
+        const val FLAG_SCAN_ENTRY = "showScanEntry"
+
+        /**
+         * 「只改 hash」的导航收尾延时（毫秒）。
+         * 取 600 ms：React 路由切页在低端机上也就几帧，留足余量又不让进度条空转太久。
+         */
+        const val SAME_DOCUMENT_SETTLE_MS = 600L
     }
 }

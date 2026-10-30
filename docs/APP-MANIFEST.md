@@ -74,6 +74,7 @@
 | `showBackToTop` | `true` | "返回顶部"浮动按钮（区块 4） |
 | `edgeToEdge` | `false` | 内容铺到状态栏下（区块 4；**默认关**，原因见 [chunks/CHUNK-04-REPORT.md](chunks/CHUNK-04-REPORT.md) §3.1） |
 | `blockLive2dAssets` | `true` | **壳侧**兜底拦截 Live2D 素材（`/static/live2d/`，模型 + 4096 纹理约 60 MB，区块 6）；置 `false` 即放行。与上面的 `live2d`（网站侧是否挂载看板娘）是两件事：网站侧已按视口宽度不挂载，本开关防的是"网站改了规则" |
+| `showScanEntry` | `true` | 右下角「扫码核验」浮动按钮（区块 8 增补）。置 `false` 即整颗按钮消失，原生取景页也就不再可达；网站侧 `/#/v` 深链接不受影响 |
 
 开关键名一旦发布就不要改名，只能新增。
 
@@ -95,7 +96,8 @@
     "pullToRefresh": true,
     "showBackToTop": true,
     "edgeToEdge": false,
-    "blockLive2dAssets": true
+    "blockLive2dAssets": true,
+    "showScanEntry": true
   },
   "notice": {
     "id": "2026-10-open-day",

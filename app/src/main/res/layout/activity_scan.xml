@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  扫码页（原生扫码）：ZXing 的 DecoratedBarcodeView 出取景框与状态文案，
+  壳只加三样自己的东西 —— 标题、关闭、手电筒（活动现场光线常不够）。
+
+  为什么自己声明 Activity 而不是直接用库里的 CaptureActivity：
+  库自带的清单写死 screenOrientation=sensorLandscape 与 clearTaskOnLaunch，
+  扫码在本站是「凑近工牌横着扫一下」，竖屏更顺手；见 shell/scan/ScanActivity.kt。
+
+  keepScreenOn：扫码时手一直举着，屏幕不能因为「没触摸」黑掉。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/scan_background"
+    android:keepScreenOn="true">
+
+    <!--
+      centerCrop + SurfaceView：与库自带布局一致。不写这两行也能跑，但预览会被拉伸
+      （取景框对不上画面，用户以为没对准），且 TextureView 在部分 ROM 上更吃内存。
+    -->
+    <com.journeyapps.barcodescanner.DecoratedBarcodeView
+        android:id="@+id/scan_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:zxing_preview_scaling_strategy="centerCrop"
+        app:zxing_use_texture_view="false" />
+
+    <TextView
+        android:id="@+id/scan_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="20dp"
+        android:layout_marginTop="24dp"
+        android:shadowColor="#CC000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+        android:text="@string/scan_title"
+        android:textColor="#FFFFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <ImageButton
+        android:id="@+id/scan_close"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="18dp"
+        android:layout_marginEnd="16dp"
+        android:background="@drawable/bg_scan_control"
+        android:contentDescription="@string/scan_close"
+        android:padding="10dp"
+        android:src="@drawable/ic_close" />
+
+    <ImageButton
+        android:id="@+id/scan_torch"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="72dp"
+        android:layout_marginEnd="16dp"
+        android:alpha="0.75"
+        android:background="@drawable/bg_scan_control"
+        android:contentDescription="@string/scan_torch"
+        android:padding="10dp"
+        android:src="@drawable/ic_torch" />
+</FrameLayout>

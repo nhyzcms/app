@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「扫码核验」浮动按钮的背景：品牌色椭圆，白图标。
+  和返回顶部按钮一样用 shape 而不是引入 Material FAB（零依赖），
+  品牌色在浅色 / 深色下都够醒目，所以不需要 values-night 另给一份。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/brand" />
+</shape>
