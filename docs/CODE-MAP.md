@@ -126,7 +126,7 @@
 | 文件 | 职责 | 关键约束 |
 |---|---|---|
 | `ScanActivity.kt` | 取景页：继承库的 `CaptureActivity`，只换布局 + 关闭钮 + 手电筒；解码/对焦/旋转/结果回传全交给 ZXing | 竖屏、黑底；手电筒状态**不做**跨重建记忆（恢复时机常赶在相机 open 前，会「按钮亮着灯没开」） |
-| `ScanRouter.kt` | 扫到的文本 → 站内落点；不是本站工牌就返回 null | **纯逻辑 + 单测**；只认 host = `AppConfig.SITE_HOST`、8/12 位数字、≤256 字符 |
+| `ScanRouter.kt` | 扫到的文本 → 站内落点；不是本站工牌就返回 null | **纯逻辑 + 单测**；只认 host = `AppConfig.SITE_HOST`、12 位签名载荷、≤256 字符（8 位裸码不接管） |
 | `ScanEntryPolicy.kt` | 右下角扫码圆钮的显隐（清单开关 / 首屏画完 / 无错误面板） | **纯逻辑 + 单测**；开关名 `showScanEntry` 见 `docs/APP-MANIFEST.md` |
 
 - 接线只在 `MainActivity`：`scanLauncher`（结果）+ `scanPermissionLauncher`（相机权限）+ `bindScanEntry()`。

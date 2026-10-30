@@ -9,8 +9,11 @@ import java.net.URI
  *
  * - **二维码**：`{FRONTEND_URL}/#/v/<8 位识别码>?s=<16 位签名>` —— 扫到就直接进校验页；
  * - **条形码（Code128）**：12 位纯数字（6 位唯一键 + 6 位十进制短签名），落到
- *   `/#/v?q=<12 位>` 让网页查一次（签名即证明，**不消耗** 24 小时额度）；
- * - 兼容旧的裸 8 位识别码条码：同样走 `/#/v?q=<8 位>`，按查询者身份分档扣额度。
+ *   `/#/v?q=<12 位>` 让网页查一次（签名即证明，**不消耗** 24 小时额度）。
+ *
+ * **不接管旧的裸 8 位识别码条码**（2026-10-30 与管理员确认：工牌还没印，没有存量）。
+ * 8 位码在服务端是按查询者身份分档**扣额度**的，扫码走它等于替用户白扣一次；
+ * 手输查询照旧支持 8 位编号，那条路由网页自己管。
  *
  * 这里**只判断落点**，不解析签名、不判断身份——那是网页与后端的事（壳不做业务）。
  * 扫到不是本站的东西就返回 null，由调用方提示「不是本站工牌」。
@@ -19,9 +22,6 @@ object ScanRouter {
 
     /** 编号查询页（MemberLookupPage），见 frontend/src/App.tsx 的 `/v` 路由。 */
     const val LOOKUP_PATH = "/#/v"
-
-    /** 识别码长度（ADR-0025：8 位数字）。 */
-    const val CODE_LEN = 8
 
     /** 条形码载荷长度（6 位唯一键 + 6 位十进制短签名）。 */
     const val BARCODE_PAYLOAD_LEN = 12
@@ -52,8 +52,9 @@ object ScanRouter {
         }
 
         // 条码是纯数字，但扫码枪 / 手抖可能带空格或短横线，先去掉再判长度。
+        // 只认 12 位签名载荷（见上面的注释：8 位裸码会扣额度，不接管）。
         val digits = text.filterNot { it == ' ' || it == '\t' || it == '-' }
-        if (digits.length != CODE_LEN && digits.length != BARCODE_PAYLOAD_LEN) return null
+        if (digits.length != BARCODE_PAYLOAD_LEN) return null
         if (!digits.all { it in '0'..'9' }) return null
         return siteOrigin + LOOKUP_PATH + "?q=" + digits
     }

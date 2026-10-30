@@ -110,6 +110,14 @@ fi
 if [ -z "$(code_grep 'MAX_TEXT_LEN' "$SCAN_DIR")" ]; then
   err "ScanRouter 必须有文本长度上限（MAX_TEXT_LEN）：不往地址栏里塞任意长内容"
 fi
+#    只认新版 12 位签名条码：8 位裸识别码在服务端按查询者身份扣额度，
+#    扫码走它等于替用户白扣一次；工牌还没印，没有需要兼容的存量（2026-10-30 管理员确认）。
+if [ -z "$(code_grep 'BARCODE_PAYLOAD_LEN' "$SCAN_DIR")" ]; then
+  err "ScanRouter 必须按 BARCODE_PAYLOAD_LEN（12 位签名载荷）判条码长度"
+fi
+if [ -n "$(code_grep 'CODE_LEN' "$SCAN_DIR")" ]; then
+  err "扫码不要恢复 8 位裸识别码（会白扣查询额度）：条码只认 12 位签名载荷"
+fi
 
 # ── 7. 清单开关可远程撤掉按钮（运营兜底）────────────────────────────────
 if [ -z "$(code_grep 'showScanEntry' app/src/main/java)" ]; then

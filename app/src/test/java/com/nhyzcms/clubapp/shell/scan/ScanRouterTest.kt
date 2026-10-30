@@ -23,14 +23,14 @@ class ScanRouterTest {
     }
 
     @Test
-    fun `旧裸 8 位识别码条码同样走编号查询页`() {
-        assertEquals("$origin/#/v?q=26090188", url("26090188"))
+    fun `旧裸 8 位识别码不接管（8 位走服务端会扣额度，工牌也没印旧版）`() {
+        assertNull(url("26090188"))
     }
 
     @Test
     fun `扫码枪带进来的空格与短横线会被去掉`() {
         assertEquals("$origin/#/v?q=260901667878", url("  2609-0166-7878 \n"))
-        assertEquals("$origin/#/v?q=26090188", url("2609 0188"))
+        assertEquals("$origin/#/v?q=260901667878", url("2609 0166 7878"))
     }
 
     @Test
@@ -57,7 +57,9 @@ class ScanRouterTest {
         assertNull(url(""))
         assertNull(url("   "))
         assertNull(url("2609018"))
+        assertNull(url("26090188"))
         assertNull(url("26090166787"))
+        assertNull(url("2609016678789"))
         assertNull(url("26090166ABCD"))
         assertNull(url("张三"))
     }
