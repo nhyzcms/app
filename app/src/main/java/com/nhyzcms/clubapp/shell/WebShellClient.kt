@@ -12,6 +12,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.nhyzcms.clubapp.shell.security.ActiveContentPolicy
 
 /**
  * 把"导航该去哪里"交给 [NavPolicy] 决定，本类只负责执行副作用
@@ -55,6 +56,14 @@ class WebShellClient(
         // 子框架与子资源不干预，避免把页面里的内嵌内容（如图片、视频）也拦下来。
         if (!request.isForMainFrame) return false
 
+        // 纵深防御（2026-11，对齐网站 a092a26「/media 同源存储型 XSS」补丁）：
+        // 上传目录里的 html / svg / xml 等活跃内容**不做顶层导航**。
+        // 图片/视频是子资源，不走这里；用户真要那个文件，用长按/下载。
+        ActiveContentPolicy.blockReason(request.url.toString())?.let { reason ->
+            onBlocked(reason, request.url.toString())
+            return true
+        }
+
         val parts = UrlParts.of(request.url)
         return when (val decision = NavPolicy.decide(parts)) {
             is NavDecision.InApp -> false // 交给 WebView 自己加载
@@ -82,6 +91,22 @@ class WebShellClient(
     override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
         handler.cancel()
         onError(ShellErrorKind.TLS, error.url)
+    }
+
+    /**
+     * 主文档被服务端拒绝时的分类（2026-11）：网站在 2026-10 加了一批限流，
+     * nginx 的 `limit_req` 会把主文档直接打成 429；若不管它，用户看到的是一张空白页。
+     */
+    override fun onReceivedHttpError(
+        view: WebView,
+        request: WebResourceRequest,
+        errorResponse: WebResourceResponse,
+    ) {
+        if (!request.isForMainFrame) return
+        when (errorResponse.statusCode) {
+            429 -> onError(ShellErrorKind.RATE_LIMITED, request.url.toString())
+            403 -> onError(ShellErrorKind.FORBIDDEN, request.url.toString())
+        }
     }
 
     override fun onReceivedError(

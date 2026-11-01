@@ -57,6 +57,8 @@ import com.nhyzcms.clubapp.shell.perf.PerfHost
 import com.nhyzcms.clubapp.shell.scan.ScanActivity
 import com.nhyzcms.clubapp.shell.scan.ScanEntryPolicy
 import com.nhyzcms.clubapp.shell.scan.ScanRouter
+import com.nhyzcms.clubapp.shell.security.WebPermissionDecision
+import com.nhyzcms.clubapp.shell.security.WebPermissionPolicy
 import com.nhyzcms.clubapp.shell.update.UpdateController
 import com.nhyzcms.clubapp.shell.update.UpdatePolicy
 
@@ -223,6 +225,16 @@ class MainActivity : AppCompatActivity() {
             if (contents.isNullOrBlank()) return@registerForActivityResult
             openScannedText(contents)
         }
+
+    /**
+     * 网页要摄像头但系统还没授权时的授权入口（2026-11）。
+     *
+     * 为什么不复用 [cameraPermissionLauncher]：那条链路拿到结果后会继续开文件选择器，
+     * 用在网页 getUserMedia 上会莫名弹出一次"选文件"。这里只申请，不自动重试——
+     * 用户再点一次页面上的扫码按钮即可。
+     */
+    private val webCameraLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* 结果在下次点击时体现 */ }
 
     /** 扫码前的相机权限：拒绝后引导到设置（不反复弹系统对话框）。 */
     private val scanPermissionLauncher: ActivityResultLauncher<String> =
@@ -411,6 +423,9 @@ class MainActivity : AppCompatActivity() {
             },
             log = { message -> if (BuildConfig.DEBUG) Log.d(TAG, message) },
             onShowFileChooser = ::handleFileChooser,
+            // 2026-11：网页 getUserMedia（/#/v 扫工牌条码）的权限裁决。
+            // 不接这个回调，WebView 一律 deny —— 壳里那个扫码按钮只会报"权限被拒绝"。
+            onWebPermissionRequest = ::handleWebPermissionRequest,
         )
 
         // 下载：WebView 自己不会落盘，交给系统 DownloadManager（带会话 Cookie，见 DownloadStarter）。
@@ -525,6 +540,35 @@ class MainActivity : AppCompatActivity() {
 
     private fun hasCameraPermission(): Boolean =
         ContextCompat.checkSelfPermission(this, PermissionsPolicy.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * 网页 `getUserMedia` 的权限裁决（2026-11，安全边界见 docs/SECURITY.md §2.2）。
+     *
+     * 裁决本身是纯函数（[WebPermissionPolicy]，有 JVM 单测）；这里只做三件事：
+     * 把 Android 的 PermissionRequest 投影成纯数据、执行授予/拒绝、日志脱敏（只记原因码与 host）。
+     */
+    private fun handleWebPermissionRequest(request: android.webkit.PermissionRequest) {
+        val decision = WebPermissionPolicy.decide(
+            origin = request.origin?.toString(),
+            requested = request.resources.toList(),
+            cameraGranted = hasCameraPermission(),
+            siteOrigin = AppConfig.SITE_ORIGIN,
+        )
+        when (decision) {
+            is WebPermissionDecision.Grant -> request.grant(decision.resources.toTypedArray())
+            is WebPermissionDecision.Deny -> {
+                request.deny()
+                Log.w(
+                    TAG,
+                    "网页权限请求被拒：${decision.reason} host=" + hostOf(request.origin?.toString()),
+                )
+                if (decision.reason == WebPermissionPolicy.REASON_CAMERA_PERMISSION) {
+                    // 系统层还没给相机权限：顺手拉一次系统授权，用户同意后重按即可用。
+                    webCameraLauncher.launch(PermissionsPolicy.CAMERA)
+                }
+            }
+        }
+    }
 
     /**
      * 是否持有写外部存储权限。Android 10 及以上不需要这个权限，直接算作“有”
@@ -828,6 +872,8 @@ class MainActivity : AppCompatActivity() {
                 ShellErrorKind.NETWORK -> R.string.error_network
                 ShellErrorKind.TLS -> R.string.error_tls
                 ShellErrorKind.BLOCKED_CLEARTEXT -> R.string.error_cleartext
+                ShellErrorKind.RATE_LIMITED -> R.string.error_rate_limited
+                ShellErrorKind.FORBIDDEN -> R.string.error_forbidden
                 ShellErrorKind.GENERIC -> R.string.error_generic
             },
         )

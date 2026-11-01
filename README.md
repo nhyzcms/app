@@ -14,9 +14,15 @@
 - 只有「原生能力变化」（新权限、新桥接接口、安全修复）才需要发新 APK（冷更新）。
 
 壳里的原生能力目前只有这些：`input[type=file]` 选文件 / 拍照、下载落盘、长按保存分享、
-三级更新、消息角标与常驻后台、**工牌扫码核验**（见 [docs/SCAN.md](docs/SCAN.md)）。
+三级更新、消息角标与常驻后台、**工牌扫码核验**（见 [docs/SCAN.md](docs/SCAN.md)）、
+**网页内摄像头授权**（`getUserMedia`：只认本站 Origin、只给视频采集，见
+[docs/SECURITY.md](docs/SECURITY.md) §2.2）。
 
 详细的更新模型见 [`docs/UPDATE-STRATEGY.md`](docs/UPDATE-STRATEGY.md)。
+
+安全侧（2026-11）：壳会拦掉 `/media/` 下 html / svg / xml / js 的**顶层导航**（纵深防御，对齐网站
+`a092a26` 上传类型判定补丁），并把主文档的 429 / 403 变成可读提示而不是白屏（对齐网站 2026-10 那批限流）。
+规则固化成 `scripts/preflight-security.sh`，CI 自动执行。
 
 ## 2. 为什么不用 Electron / Capacitor
 

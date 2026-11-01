@@ -34,9 +34,28 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 | JavaScript | `true`（必需，SPA 靠它） | 配合上面的 origin 白名单与无 JS 桥接 |
 | 数据库/本地存储 | `true` | SPA 需要 localStorage（如 `cobalt:theme`） |
 | 安全浏览 | `setSafeBrowsingEnabled(true)`（API 26+） | 拦截恶意站点 |
+| 网页 `getUserMedia` | 只走 `WebPermissionPolicy`：本站 Origin + 仅视频采集 + 系统已授权相机；**麦克风永不授予** | 网站 `/#/v` 用摄像头扫工牌条码；不接这个回调则一律 deny（2026-11） |
+| 上传目录活跃内容 | 顶层导航命中 `/media/*.{html,svg,xml,js,mhtml,…}` 直接拦截（`ActiveContentPolicy`） | 纵深防御：网站已按真实内容判定上传类型（审计 `a092a26`），壳里再加一道 |
 | 远程调试 | 仅 debug | 避免 release 被 adb 接入 |
 | 文件选择 | 仅系统 SAF / 相机 | 不申请读取媒体、读取外部存储类权限 |
 | 下载落盘 | API 29+ 写公共「下载」目录（免权限）；API 26~28 用 `WRITE_EXTERNAL_STORAGE`（**maxSdkVersion=28**）；被拒则退 App 目录 | 让 Android 8/9 用户也能在系统「下载」里找到文件，代价被限制在两个旧版本上 |
+
+### 2.2 与网站 2026-10 安全审计补丁的对照（2026-11 补）
+
+网站仓库 2026-10 打了 20 余个安全补丁（提交信息里的 `审计 S-2 / H-2 / M-1 / M-3 …`）。
+下表把**与壳有关**的那几条单独拎出来，说明壳侧做了什么——网站修的是服务端，壳修的是"客户端别把服务端的
+防线绕过去或被它的新行为噎住"。
+
+| 网站补丁 | 壳侧对应 | 落点 |
+|---|---|---|
+| `a092a26` 上传按真实内容判定类型（堵 `/media` 同源存储型 XSS） | 纵深防御：`/media/` 下 html / svg / xml / js / mhtml 等**禁止顶层导航**；图片视频是子资源，不受影响 | `shell/security/ActiveContentPolicy.kt` + `WebShellClient.shouldOverrideUrlLoading` |
+| `9c87738` / `9af7727` / `72abc5d` 一批限流（登录、找回密码、公开投票、评论私信…） | 主文档 429 / 403 不再落成空白页：分别提示"请求太频繁，稍后重试"与"访问被拒绝，可能登录已失效" | `WebShellClient.onReceivedHttpError` + `ShellErrorKind.RATE_LIMITED/FORBIDDEN` + `strings.xml` |
+| `117feaf` / 多端登录、注销清设备 | 退出登录 / 被挤号由**网站**处理会话；壳在会话失效时只展示错误面板，不做任何"保留旧会话"的兜底（避免换号残留） | 既有：Cookie 只由 WebView 持有，壳不落盘会话 |
+| `ddd3f8c` 调试默认关闭 | 复核：release 包远程调试仍只在 `BuildConfig.DEBUG` 打开；CERT 失败仍硬失败 | 既有 + 本文件的 §2 基线 |
+| `S-2` 密码重置越权、`M-2` 问卷作答完整性等纯服务端规则 | 壳不新增任何直连接口或旁路；所有请求仍走网页自身的 `api/*`（同源 + Cookie） | 无新增面 |
+
+> 新增的静态预检：`scripts/preflight-security.sh`（被 `preflight-feel.sh` 通配带进 CI），
+> 拦住"摘掉 `/media` 闸门""整包授予网页权限""主文档 429 不分类""TLS 失败放行"这几类回退。
 
 ### 2.1 权限清单（当前全部声明的权限）
 
@@ -44,7 +63,7 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 |---|---|---|
 | `INTERNET` | 加载站点与下载 | — |
 | `ACCESS_NETWORK_STATE` | 网络可用性判断/错误提示 | — |
-| `CAMERA` | 拍照上传、扫码核验工牌（区块 8 增补） | 都是用户点下去才申请；拍照被拒退化为只能选文件，扫码被拒弹中文引导并可直达系统设置 |
+| `CAMERA` | 拍照上传、扫码核验工牌（区块 8 增补）、**网页内 `getUserMedia` 扫码**（2026-11） | 都是用户点下去才申请；拍照被拒退化为只能选文件，扫码被拒弹中文引导并可直达系统设置；网页申请时还必须过 `WebPermissionPolicy`（本站 Origin + 仅视频） |
 | `WRITE_EXTERNAL_STORAGE` | Android 8/9 把下载写进公共「下载」目录 | **`maxSdkVersion=28`**，且仅在下载时申请；拒了退 App 目录 |
 | `POST_NOTIFICATIONS` | 未读通知与 launcher 角标（区块 5） | Android 13+ 进 App 后申请一次；拒绝则不弹通知、不显示角标，网页内徽标照常（不伪装） |
 | `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_DATA_SYNC` | 登录后常驻前台服务，保活消息 WS 连接（2026-10-17） | 服务只连本站；退出登录 / 被挤号即停；常驻通知走独立渠道且不驱动角标 |
