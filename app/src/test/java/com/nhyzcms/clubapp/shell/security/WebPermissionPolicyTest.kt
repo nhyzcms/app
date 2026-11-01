@@ -1,8 +1,8 @@
 package com.nhyzcms.clubapp.shell.security
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 class WebPermissionPolicyTest {
 
@@ -10,25 +10,28 @@ class WebPermissionPolicyTest {
     private val video = listOf(WebPermissionPolicy.RES_VIDEO_CAPTURE)
 
     @Test
-    fun `本站请求摄像头且系统权限已给 —— 只授予视频采集`() {
+    fun grantsVideoOnlyForSiteOrigin() {
         val decision = WebPermissionPolicy.decide(site, video, cameraGranted = true, siteOrigin = site)
-        val grant = assertIs<WebPermissionDecision.Grant>(decision)
-        assertEquals(listOf(WebPermissionPolicy.RES_VIDEO_CAPTURE), grant.resources)
+        assertTrue(decision is WebPermissionDecision.Grant)
+        assertEquals(
+            listOf(WebPermissionPolicy.RES_VIDEO_CAPTURE),
+            (decision as WebPermissionDecision.Grant).resources,
+        )
     }
 
     @Test
-    fun `origin 大小写与结尾斜杠不影响判定`() {
+    fun originComparisonIgnoresCaseAndTrailingSlash() {
         val decision = WebPermissionPolicy.decide(
             "HTTPS://8.153.145.175/",
             video,
             cameraGranted = true,
             siteOrigin = site,
         )
-        assertIs<WebPermissionDecision.Grant>(decision)
+        assertTrue(decision is WebPermissionDecision.Grant)
     }
 
     @Test
-    fun `外部 origin 一律拒绝`() {
+    fun rejectsForeignOrigin() {
         val decision = WebPermissionPolicy.decide(
             "https://evil.example.com",
             video,
@@ -42,7 +45,7 @@ class WebPermissionPolicyTest {
     }
 
     @Test
-    fun `缺失 origin 也拒绝`() {
+    fun rejectsMissingOrigin() {
         assertEquals(
             WebPermissionDecision.Deny(WebPermissionPolicy.REASON_FOREIGN_ORIGIN),
             WebPermissionPolicy.decide(null, video, cameraGranted = true, siteOrigin = site),
@@ -50,7 +53,7 @@ class WebPermissionPolicyTest {
     }
 
     @Test
-    fun `只要麦克风时整单拒绝`() {
+    fun rejectsAudioOnlyRequest() {
         val decision = WebPermissionPolicy.decide(
             site,
             listOf(WebPermissionPolicy.RES_AUDIO_CAPTURE),
@@ -64,7 +67,7 @@ class WebPermissionPolicyTest {
     }
 
     @Test
-    fun `同时要麦克风与摄像头也整单拒绝（不做部分授予）`() {
+    fun rejectsMixedAudioAndVideoRequest() {
         val decision = WebPermissionPolicy.decide(
             site,
             listOf(WebPermissionPolicy.RES_VIDEO_CAPTURE, WebPermissionPolicy.RES_AUDIO_CAPTURE),
@@ -78,7 +81,7 @@ class WebPermissionPolicyTest {
     }
 
     @Test
-    fun `系统层还没给相机权限时拒绝（先引导授权，不静默放行）`() {
+    fun rejectsWhenCameraPermissionNotGranted() {
         val decision = WebPermissionPolicy.decide(site, video, cameraGranted = false, siteOrigin = site)
         assertEquals(
             WebPermissionDecision.Deny(WebPermissionPolicy.REASON_CAMERA_PERMISSION),
