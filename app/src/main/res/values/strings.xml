@@ -7,6 +7,8 @@
     <string name="error_network">网络好像断开了，或服务器暂时不可用。请检查网络后重试。</string>
     <string name="error_tls">安全连接失败：无法验证服务器证书。公共 WiFi 可能被劫持，请不要在此网络下输入密码。</string>
     <string name="error_cleartext">已拦截不安全的明文链接（http）。本站只允许 HTTPS 访问。</string>
+    <string name="error_rate_limited">请求太频繁，服务器正在限流。请稍等一会儿再重试。</string>
+    <string name="error_forbidden">服务器拒绝了这次访问（可能登录状态已失效）。请下拉刷新或重新登录。</string>
     <string name="error_generic">页面加载失败，请稍后重试。</string>
 
     <!-- 操作 -->
