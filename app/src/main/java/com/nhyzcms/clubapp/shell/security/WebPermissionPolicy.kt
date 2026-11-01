@@ -52,9 +52,12 @@ object WebPermissionPolicy {
         if (!sameOrigin(origin, siteOrigin)) {
             return WebPermissionDecision.Deny(REASON_FOREIGN_ORIGIN)
         }
-        if (RES_VIDEO_CAPTURE !in requested) {
-            // 只要有一项是我们不支持的（例如 AUDIO_CAPTURE），就整单拒绝：
-            // 部分授予音频没有意义，而"网页要什么给什么"是这类桥最典型的翻车方式。
+        // 请求里只能有 VIDEO_CAPTURE 这一项（重复的无所谓，用 Set 归一）。
+        // 只要混进别的东西（例如 AUDIO_CAPTURE），就**整单拒绝**：
+        // 部分授予虽然合法，但"这页居然要麦克风"本身就是不该出现的信号，
+        // 宁可让页面报错，也不要让一个来路不明的脚本拿到半套能力。
+        val wanted = requested.toSet()
+        if (wanted != setOf(RES_VIDEO_CAPTURE)) {
             return WebPermissionDecision.Deny(REASON_NO_SUPPORTED_RESOURCE)
         }
         if (!cameraGranted) {

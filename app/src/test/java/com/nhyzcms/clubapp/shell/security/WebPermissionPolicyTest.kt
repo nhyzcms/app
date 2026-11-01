@@ -81,6 +81,17 @@ class WebPermissionPolicyTest {
     }
 
     @Test
+    fun duplicateVideoEntryStillGranted() {
+        val decision = WebPermissionPolicy.decide(
+            site,
+            listOf(WebPermissionPolicy.RES_VIDEO_CAPTURE, WebPermissionPolicy.RES_VIDEO_CAPTURE),
+            cameraGranted = true,
+            siteOrigin = site,
+        )
+        assertTrue(decision is WebPermissionDecision.Grant)
+    }
+
+    @Test
     fun rejectsWhenCameraPermissionNotGranted() {
         val decision = WebPermissionPolicy.decide(site, video, cameraGranted = false, siteOrigin = site)
         assertEquals(
