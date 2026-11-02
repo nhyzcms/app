@@ -114,12 +114,15 @@ class MainActivityShellTest {
         client().onReceivedHttpError(
             webView,
             request("https://8.153.145.175/", mainFrame = true),
+            // compileSdk 35 的 WebResourceResponse 只有 3 参与 6 参构造（6 参带 InputStream），
+            // 没有「5 参 + headers」那个重载，所以这里补一个空 InputStream。
             android.webkit.WebResourceResponse(
                 "text/html",
                 "UTF-8",
                 429,
                 "Too Many Requests",
                 emptyMap<String, String>(),
+                java.io.ByteArrayInputStream(ByteArray(0)),
             ),
         )
 
