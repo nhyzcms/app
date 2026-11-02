@@ -15,6 +15,7 @@ import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -57,6 +58,7 @@ import com.nhyzcms.clubapp.shell.perf.PerfHost
 import com.nhyzcms.clubapp.shell.scan.ScanActivity
 import com.nhyzcms.clubapp.shell.scan.ScanEntryPolicy
 import com.nhyzcms.clubapp.shell.scan.ScanRouter
+import com.nhyzcms.clubapp.shell.security.CameraPermissionPolicy
 import com.nhyzcms.clubapp.shell.security.WebPermissionDecision
 import com.nhyzcms.clubapp.shell.security.WebPermissionPolicy
 import com.nhyzcms.clubapp.shell.update.UpdateController
@@ -116,6 +118,20 @@ class MainActivity : AppCompatActivity() {
 
     /** 网页首屏是否已经画出来：扫码按钮要等它（判定见 [ScanEntryPolicy]）。 */
     private var pageLoaded = false
+
+    /**
+     * 网页 `getUserMedia` 挂起的相机权限请求（2026-11，见 [CameraPermissionPolicy]）。
+     *
+     * 以前这里直接 `deny()` 再拉系统授权框，结果是「第一下扫码必然失败、得再点一次」。
+     * 现在先把请求挂住，系统框给出结果后再 grant/deny，网页只看到一次正常授权。
+     */
+    private var pendingWebCameraRequest: PermissionRequest? = null
+
+    /** 系统相机授权框是否正开着：并发 launch 会把两次结果弄串。 */
+    private var cameraPromptInFlight = false
+
+    /** 本次停留在扫码页（`/#/v`）期间是否已经主动问过相机权限；离开就重置。 */
+    private var cameraAskedForScanRoute = false
 
     /**
      * 「只改 # 片段」的导航收尾（见 [openScannedText]）。
@@ -227,14 +243,35 @@ class MainActivity : AppCompatActivity() {
         }
 
     /**
-     * 网页要摄像头但系统还没授权时的授权入口（2026-11）。
+     * 网页要摄像头时的系统授权入口（2026-11）。
+     *
+     * 两种触发：
+     *  ① 进到扫码页（`/#/v`）主动预申请一次（[onRouteChanged]）；
+     *  ② 网页真的来要 `getUserMedia` 时，把请求挂起再问（[handleWebPermissionRequest]）。
+     *
+     * 结果回来后才答网页 —— 第一次点扫码就能出画面，不会「先失败一次再点一次」。
+     * 这次拒绝不弹设置页：下次真需要时会再问一次；只有「拒绝且不再询问」
+     * （系统不再弹框）才引导去设置，见 [explainScanCameraDenied]。
      *
      * 为什么不复用 [cameraPermissionLauncher]：那条链路拿到结果后会继续开文件选择器，
-     * 用在网页 getUserMedia 上会莫名弹出一次"选文件"。这里只申请，不自动重试——
-     * 用户再点一次页面上的扫码按钮即可。
+     * 用在网页 getUserMedia 上会莫名弹出一次「选文件」。
      */
     private val webCameraLauncher: ActivityResultLauncher<String> =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* 结果在下次点击时体现 */ }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            cameraPromptInFlight = false
+            val pending = pendingWebCameraRequest
+            pendingWebCameraRequest = null
+            if (granted) {
+                // 请求可能已随页面销毁失效，grant 失败不该让壳崩溃。
+                if (pending != null) runCatching { pending.grant(arrayOf(WebPermissionPolicy.RES_VIDEO_CAPTURE)) }
+                return@registerForActivityResult
+            }
+            pending?.deny()
+            if (pending != null && !shouldShowRequestPermissionRationale(PermissionsPolicy.CAMERA)) {
+                // 系统不会再弹框了（拒绝且不再询问）：这是最后一次能提醒用户的机会。
+                explainScanCameraDenied()
+            }
+        }
 
     /** 扫码前的相机权限：拒绝后引导到设置（不反复弹系统对话框）。 */
     private val scanPermissionLauncher: ActivityResultLauncher<String> =
@@ -395,6 +432,8 @@ class MainActivity : AppCompatActivity() {
             },
             onPageStarted = {
                 pageLoaded = false
+                // 新文档一开，旧文档挂起的相机请求就失效了，别留着手滑 grant 到废请求上。
+                pendingWebCameraRequest = null
                 hideError()
             },
             onPageFinished = {
@@ -403,6 +442,8 @@ class MainActivity : AppCompatActivity() {
                 hideError()
                 feel.onPageRendered()
             },
+            // 进扫码页（/#/v）主动申请相机权限（判定见 CameraPermissionPolicy）
+            onRouteChanged = ::onRouteChanged,
             // 清单开关 externalLinkInBrowser（默认 true = 外链交系统浏览器）
             externalLinkInBrowser = {
                 UpdatePolicy.flag(updates.flags(), "externalLinkInBrowser", true)
@@ -544,10 +585,12 @@ class MainActivity : AppCompatActivity() {
     /**
      * 网页 `getUserMedia` 的权限裁决（2026-11，安全边界见 docs/SECURITY.md §2.2）。
      *
-     * 裁决本身是纯函数（[WebPermissionPolicy]，有 JVM 单测）；这里只做三件事：
-     * 把 Android 的 PermissionRequest 投影成纯数据、执行授予/拒绝、日志脱敏（只记原因码与 host）。
+     * 裁决本身是纯函数（[WebPermissionPolicy]，有 JVM 单测）；系统相机权限还没给时
+     * **不立刻拒**，而是把请求挂起、先问系统（判定见 [CameraPermissionPolicy.webAskAction]）。
+     * 这里只做三件事：把 Android 的 PermissionRequest 投影成纯数据、执行授予/拒绝、
+     * 日志脱敏（只记原因码与 host）。
      */
-    private fun handleWebPermissionRequest(request: android.webkit.PermissionRequest) {
+    private fun handleWebPermissionRequest(request: PermissionRequest) {
         val decision = WebPermissionPolicy.decide(
             origin = request.origin?.toString(),
             requested = request.resources.toList(),
@@ -557,17 +600,56 @@ class MainActivity : AppCompatActivity() {
         when (decision) {
             is WebPermissionDecision.Grant -> request.grant(decision.resources.toTypedArray())
             is WebPermissionDecision.Deny -> {
+                val cameraBlockedBySystem = decision.reason == WebPermissionPolicy.REASON_CAMERA_PERMISSION
+                val action = CameraPermissionPolicy.webAskAction(hasCameraHardware())
+                if (cameraBlockedBySystem && action == CameraPermissionPolicy.WebAsk.Hold) {
+                    // 连点两次时旧请求先答掉，别让网页那边一直挂着；系统框已经开着就只排队，不再 launch。
+                    pendingWebCameraRequest?.deny()
+                    pendingWebCameraRequest = request
+                    if (!cameraPromptInFlight) askWebCameraPermission()
+                    return
+                }
                 request.deny()
                 Log.w(
                     TAG,
                     "网页权限请求被拒：${decision.reason} host=" + hostOf(request.origin?.toString()),
                 )
-                if (decision.reason == WebPermissionPolicy.REASON_CAMERA_PERMISSION) {
-                    // 系统层还没给相机权限：顺手拉一次系统授权，用户同意后重按即可用。
-                    webCameraLauncher.launch(PermissionsPolicy.CAMERA)
-                }
+                // 全网唯一的「问也没用」情况：设备没有摄像头。给一句中文提示，别让用户干等。
+                if (cameraBlockedBySystem) toast(R.string.toast_scan_no_camera)
             }
         }
+    }
+
+    /** 拉一次系统相机授权框；结果在 [webCameraLauncher] 里回填给挂起的网页请求。 */
+    private fun askWebCameraPermission() {
+        cameraPromptInFlight = true
+        // Activity 已不在前台时 launch 会抛 IllegalStateException：那就当场拒，别让网页干等。
+        runCatching { webCameraLauncher.launch(PermissionsPolicy.CAMERA) }.onFailure {
+            cameraPromptInFlight = false
+            pendingWebCameraRequest?.deny()
+            pendingWebCameraRequest = null
+        }
+    }
+
+    /**
+     * 路由变化（含 SPA 的 hash 导航）：进到扫码页 `/#/v` 就先把相机权限问下来（2026-11）。
+     *
+     * 主动问一次的好处是「点扫码直接出画面」；被拒也不再连环弹（[CameraPermissionPolicy]
+     * 只放行每页一次），用户真点扫码时 [handleWebPermissionRequest] 会再问一次。
+     */
+    private fun onRouteChanged(url: String?) {
+        if (!CameraPermissionPolicy.isScanRoute(url)) {
+            cameraAskedForScanRoute = false
+            return
+        }
+        val shouldAsk = CameraPermissionPolicy.shouldAskOnScanRoute(
+            granted = hasCameraPermission(),
+            askedForRoute = cameraAskedForScanRoute,
+            promptInFlight = cameraPromptInFlight,
+        )
+        if (!shouldAsk || !hasCameraHardware()) return
+        cameraAskedForScanRoute = true
+        askWebCameraPermission()
     }
 
     /**
@@ -956,6 +1038,8 @@ class MainActivity : AppCompatActivity() {
         // （abort 会顺带清掉拍照的临时文件）
         pendingChooser = null
         pendingDownload = null
+        pendingWebCameraRequest?.deny()
+        pendingWebCameraRequest = null
         fileChooser.abort()
 
         // 区块 3：取消未完成的更新下载、清掉主线程回调（避免持有已销毁的 Activity）

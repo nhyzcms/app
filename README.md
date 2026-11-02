@@ -202,8 +202,11 @@ gradle :app:testDebugUnitTest
   - 文件选择走系统 SAF、分享图片走 App 缓存，都不需要读取类权限；
   - `WRITE_EXTERNAL_STORAGE` **只在 Android 8/9 上**用来把下载写进公共「下载」目录
     （`maxSdkVersion="28"`，且仅在下载时申请；拒了退 App 目录），preflight 会强制校验这个限定；
-  - `CAMERA` 两个用途：拍照上传、**扫码核验工牌**；都是用户点下去才申请，拒绝后给中文引导
-    （扫码被拒时可直达系统设置，拍照被拒则退化为只能选文件）；
+  - `CAMERA` 两个用途：拍照上传、**扫码核验工牌**（原生取景 + 网页 `getUserMedia`）；
+    拍照与原生扫码是用户点下去才申请；网页内扫码在进 `/#/v` 时**主动申请一次**，
+    若点扫码时系统还没授权，壳会把网页的请求挂起、等系统结果再答（2026-11，
+    见 `CameraPermissionPolicy`）；拒绝后给中文引导
+    （扫码被拒可直达系统设置，拍照被拒则退化为只能选文件）；
   - `POST_NOTIFICATIONS`（区块 5）：Android 13+ 进 App 约 4 秒后弹一次，用于未读通知与 launcher 角标；
     拒绝则不发通知、无角标，网页内徽标照常（绝不反复弹窗）；
   - `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_DATA_SYNC`（2026-10-17 常驻后台）：登录后用前台服务把
@@ -241,6 +244,12 @@ gradle :app:testDebugUnitTest
 
 分块依据与验收标准见 [`docs/ROADMAP.md`](docs/ROADMAP.md)，功能台账见 [`docs/FEATURE-MATRIX.md`](docs/FEATURE-MATRIX.md)。
 
+> **2026-11-02 修复（网页内扫码的相机权限）**：以前网页 `getUserMedia` 被系统权限拦住时，
+> 壳是「先 deny、再弹系统授权框」，所以第一次点扫码**必然失败一次**，得再点一次才出画面。
+> 现在：进 `/#/v` 就主动申请一次（`CameraPermissionPolicy`，每页只问一次）；点扫码时若还没授权，
+> 壳把 `PermissionRequest` **挂起**，等系统结果回来再 grant/deny；用户拒绝后再次需要时会重新申请，
+> 只有「拒绝且不再询问」才引导到系统设置。
+>
 > **2026-10-30 增补（原生扫码）**：右下角品牌色扫码圆钮 + 原生竖屏取景页（QR_CODE / CODE_128），
 > 扫完工牌后落到网页的 `/#/v` 深链接，**查询与结果卡全部复用网站实现**（壳里不复制业务）。
 > 网站侧配套是「`/#/v` 支持 `?q=` 深链接」那个 PR。🟡 代码就绪（CI 绿），待真机验收 ——
