@@ -252,6 +252,26 @@
   扫完工牌落到网站 `/#/v` 深链接（`/#/v?q=` 或 `/#/v/<码>?s=`），查询与结果卡全部复用网站实现。
   代码在 `shell/scan/`，规则见 [SCAN.md](SCAN.md)，清单开关 `showScanEntry` 可远程撤掉入口。
 
+### 进度（2026-11-01）
+
+**网站仓库 PR [#266](https://github.com/nhyzcms/club-management-website/pull/266)**（分支 `feat/08-app-mode-finish`）：
+
+- ✅ **最低壳版本闸门**：`frontend/src/utils/shellVersion.ts` 从 UA 解析 `versionCode`
+  （ok / outdated / unknown），`components/ShellVersionGate.tsx` 低于 `MIN_SHELL_VERSION_CODE`（=2）时
+  全屏提示更新 + `/app-update/latest.apk` 直链；**可「暂时继续」且不写 localStorage**，
+  浏览器与解析不出版本码的请求一律放行（不猜、不锁死）；单测 8 条。
+- ✅ **入口补齐**：「我的」新增「更多」分组 —— 考试看板 / 课表 / 全景图 / 关于我们
+  （桌面版式，但**有入口、能操作**，符合本块的降级口径）。
+- ✅ **弱网**：手机版首页封面改走 `cover_thumbnail_url`（此前只有 `/m/news` 用缩略图）。
+- ✅ **L0 热更新的前提**：`/` 与兜底路由改用 `never_cache`（`config/urls.py`），
+  防止 WebView 缓存旧 `index.html` 后去要已被删除的 contenthash chunk（白屏）。
+- ✅ **不注入 Live2D**：早已按 UA / 视口宽度生效（区块 6 实测 App UA 零 `/static/live2d/` 请求），
+  本块无需改动，只在台账里确认。
+- ⏳ 待办：真机回归（FEATURE-MATRIX 里标 🟡 的行）。
+
+> 不做的部分（明确写下，避免被当成"忘了"）：新建新闻 / 任务的富文本编辑器手机版适配
+> （6 寸屏不可用）、Django admin 移动化（有入口、允许降级）、SurveyJS 问卷编辑器移动化。
+
 ---
 
 ## 跨仓库待办：站点证书链与域名（需管理员决策）

@@ -232,7 +232,7 @@ gradle :app:testDebugUnitTest
 | 5 | 站内消息与角标（前台 WSS / 静音通知驱动角标 / 点通知直达会话） | 🟡 代码就绪（PR #16 已合并 2026-10-13）；**2026-10-17 按真机反馈补强为常驻后台（PR #25 已合并）**，随 v0.2.0 发版，待真机验收（[报告](docs/chunks/CHUNK-05-REPORT.md)｜[补强说明](docs/FIX-20261017-BACKGROUND-PUSH.md)｜[跨仓库契约](docs/PUSH-CONTRACT.md)） |
 | 6 | 弱网与性能（首屏看护去误报 / 探测降频 / Live2D 兜底拦截 / 低内存降级） | 🟡 代码就绪（2026-10-13，CI 绿），待真机验收（[报告](docs/chunks/CHUNK-06-REPORT.md)） |
 | 7 | 签名与首个 Release 发布 | ✅ 已完成，真机验收通过 2026-10-17：[Release v0.1.0](https://github.com/nhyzcms/app/releases/tag/v0.1.0) 已发布、自托管镜像已生效（[报告](docs/chunks/CHUNK-07-REPORT.md)｜[BUILD.md §3](docs/BUILD.md)） |
-| 8 | 网站侧配套（App 模式 UI 覆盖全部功能 + manifest 端点） | ⏳（已挂入网站侧不注入 live2d + 大图懒加载，见 ROADMAP） |
+| 8 | 网站侧配套（App 模式 UI 覆盖全部功能 + 最低壳版本闸门 + manifest 端点） | 🟡 代码就绪（2026-11-01，网站 PR [#266](https://github.com/nhyzcms/club-management-website/pull/266)）：入口补齐、壳版本闸门、首页缩略图、SPA 入口 no-cache；待合并与真机回归（[报告](docs/chunks/CHUNK-08-REPORT.md)） |
 | 9 | 测试与验收（手测清单 / 回归流程 / E2E） | ⏳ |
 | 10 | 长期维护手册与交接 | ⏳ |
 
@@ -282,6 +282,8 @@ gradle :app:testDebugUnitTest
 | [chunks/CHUNK-04-REPORT.md](docs/chunks/CHUNK-04-REPORT.md) | 区块 4（原生手感）交付说明与真机验收清单 |
 | [chunks/CHUNK-05-REPORT.md](docs/chunks/CHUNK-05-REPORT.md) | 区块 5（消息与角标）交付说明与真机验收清单 |
 | [chunks/CHUNK-06-REPORT.md](docs/chunks/CHUNK-06-REPORT.md) | 区块 6（弱网与性能）交付说明与真机验收清单 |
+| [chunks/CHUNK-07-REPORT.md](docs/chunks/CHUNK-07-REPORT.md) | 区块 7（签名与首个 Release）交付说明与红线 |
+| [chunks/CHUNK-08-REPORT.md](docs/chunks/CHUNK-08-REPORT.md) | 区块 8（网站侧配套）交付说明与真机回归清单 |
 | [FIX-20261012-STARTUP-CRASH.md](docs/FIX-20261012-STARTUP-CRASH.md) | 故障报告：启动闪退（后台线程访问 WebView） |
 | [FIX-20261012-BLANK-SCREEN.md](docs/FIX-20261012-BLANK-SCREEN.md) | 故障报告：黑/白屏（骨架浮层永不揭开） |
 | [FIX-20261012-BLANK-SCREEN-2.md](docs/FIX-20261012-BLANK-SCREEN-2.md) | 故障报告：硬看门狗 + 壳侧网络探测 + 诊断浮层 |
