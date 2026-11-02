@@ -34,7 +34,7 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 | JavaScript | `true`（必需，SPA 靠它） | 配合上面的 origin 白名单与无 JS 桥接 |
 | 数据库/本地存储 | `true` | SPA 需要 localStorage（如 `cobalt:theme`） |
 | 安全浏览 | `setSafeBrowsingEnabled(true)`（API 26+） | 拦截恶意站点 |
-| 网页 `getUserMedia` | 只走 `WebPermissionPolicy`：本站 Origin + 仅视频采集 + 系统已授权相机；**麦克风永不授予** | 网站 `/#/v` 用摄像头扫工牌条码；不接这个回调则一律 deny（2026-11） |
+| 网页 `getUserMedia` | 只走 `WebPermissionPolicy`：本站 Origin + 仅视频采集 + 系统已授权相机；**麦克风永不授予**；未授权时**挂起请求**等系统结果（2026-11 修复） | 网站 `/#/v` 用摄像头扫工牌条码；不接这个回调则一律 deny；先 deny 再申请会让第一次扫码必然失败 |
 | 上传目录活跃内容 | 顶层导航命中 `/media/*.{html,svg,xml,js,mhtml,…}` 直接拦截（`ActiveContentPolicy`） | 纵深防御：网站已按真实内容判定上传类型（审计 `a092a26`），壳里再加一道 |
 | 远程调试 | 仅 debug | 避免 release 被 adb 接入 |
 | 文件选择 | 仅系统 SAF / 相机 | 不申请读取媒体、读取外部存储类权限 |
@@ -63,7 +63,7 @@ API 26~28 需 `WRITE_EXTERNAL_STORAGE`（**仅限 maxSdkVersion=28**，管理员
 |---|---|---|
 | `INTERNET` | 加载站点与下载 | — |
 | `ACCESS_NETWORK_STATE` | 网络可用性判断/错误提示 | — |
-| `CAMERA` | 拍照上传、扫码核验工牌（区块 8 增补）、**网页内 `getUserMedia` 扫码**（2026-11） | 都是用户点下去才申请；拍照被拒退化为只能选文件，扫码被拒弹中文引导并可直达系统设置；网页申请时还必须过 `WebPermissionPolicy`（本站 Origin + 仅视频） |
+| `CAMERA` | 拍照上传、扫码核验工牌（区块 8 增补）、**网页内 `getUserMedia` 扫码**（2026-11） | 拍照/原生扫码是点下去才申请；网页内扫码进 `/#/v` 时主动申请一次，点扫码时未授权则**挂起网页请求等系统结果**（`CameraPermissionPolicy`）；拒绝后再需要会重问，永久拒绝才引导去设置；网页申请还必须过 `WebPermissionPolicy`（本站 Origin + 仅视频） |
 | `WRITE_EXTERNAL_STORAGE` | Android 8/9 把下载写进公共「下载」目录 | **`maxSdkVersion=28`**，且仅在下载时申请；拒了退 App 目录 |
 | `POST_NOTIFICATIONS` | 未读通知与 launcher 角标（区块 5） | Android 13+ 进 App 后申请一次；拒绝则不弹通知、不显示角标，网页内徽标照常（不伪装） |
 | `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_DATA_SYNC` | 登录后常驻前台服务，保活消息 WS 连接（2026-10-17） | 服务只连本站；退出登录 / 被挤号即停；常驻通知走独立渠道且不驱动角标 |

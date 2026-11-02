@@ -27,6 +27,11 @@ class WebShellClient(
     private val onPageStarted: (String) -> Unit,
     private val onPageFinished: (String) -> Unit,
     /**
+     * 路由变化（含 SPA 的 hash 导航）：onPageFinished 与 doUpdateVisitedHistory 都会走。
+     * 壳用它判断「是不是进了扫码页 `/v`」，从而主动申请相机权限（2026-11）。
+     */
+    private val onRouteChanged: (String) -> Unit = {},
+    /**
      * 外链是否交给系统浏览器（清单开关 `externalLinkInBrowser`）。
      * 关掉时外链在壳内加载；明文（http）拦截不依赖它——NavPolicy 会先拒掉。
      */
@@ -125,6 +130,15 @@ class WebShellClient(
 
     override fun onPageFinished(view: WebView, url: String?) {
         onPageFinished(url.orEmpty())
+        onRouteChanged(url.orEmpty())
+    }
+
+    /**
+     * 站内是 hash 路由：`/#/m` → `/#/v` 只换片段，WebView 不重载文档、也不触发 onPageFinished，
+     * 但会回调这里。少了它，进扫码页时「主动要相机权限」就永远等不到时机。
+     */
+    override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+        onRouteChanged(url.orEmpty())
     }
 
     private fun openExternally(context: Context, url: String) {

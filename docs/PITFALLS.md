@@ -276,6 +276,33 @@ Mockito.verify(handler, Mockito.never()).proceed()
 才适合写匿名实现。判断构造函数是否可见不用本地 SDK —— 看 CI 报错里列出的候选构造即可。
 
 
+### 6.4 `onPermissionRequest` 里别「先 deny 再申请」（2026-11-02 实测）
+
+网页 `getUserMedia` 走 `WebChromeClient.onPermissionRequest`。系统相机权限没授予时，
+**不要在回调里 `deny()` 之后才去 `launch()` 系统授权框**——网页当场拿到 `NotAllowedError`，
+用户看到「扫码失败」，然后系统框才弹出来，必须再点一次。正确做法是把 `PermissionRequest`
+**挂起**，等 `registerForActivityResult` 的回调里再 `grant()` / `deny()`：
+
+```kotlin
+// 错：网页立刻失败，授权框后到
+request.deny()
+webCameraLauncher.launch(CAMERA)
+
+// 对：请求先挂住，结果回来再答
+pendingWebCameraRequest = request
+webCameraLauncher.launch(CAMERA)   // 回调里 grant/deny 那个挂起的 request
+```
+
+配套细节（都在 `MainActivity` + `CameraPermissionPolicy`）：
+
+- `PermissionRequest` 随文档失效：`onPageStarted` / `onDestroy` 必须清掉挂起的请求；
+- 系统框正开着时又来一个请求：**排队**（旧的先 deny 掉），别再 launch 一次；
+- 想「主动申请」不要挂全局：只在扫码页（`/#/v`）问一次，且 SPA 的 hash 导航要挂
+  `doUpdateVisitedHistory`，否则从 `/#/m` 切过去永远不会触发 `onPageFinished`；
+- `shouldShowRequestPermissionRationale == false` 在「从没问过」和「拒绝且不再询问」时都为 false——
+  只有**刚问完且被拒**的那次才能据此判定为永久拒绝，别在启动时用它。
+
+
 ### 6.2 一次性读 computed style 会撞重渲染窗口（网站侧经验，同样适用）
 
 用一次性的 `evaluate` 去读 `transitionProperty`，可能正好落在重渲染窗口里读回空串。改为可重试的断言（Playwright 的 `toHaveCSS`），让框架自己等稳定。
@@ -358,5 +385,7 @@ VERSION_CODE=2 VERSION_NAME=0.2.0 gradle :app:assembleDebug
 - **2026-10-17**：新增 §1.9（Gradle 签名配置自赋值，只在 release 打包时才炸）；
   §8 补「更新器 rsync `--delete` 语义会删掉 `/opt/club` 下未排除的目录，
   自托管 APK 目录必须放 `data` 根」。
+- **2026-11-02**：新增 §6.4（`onPermissionRequest` 先 deny 再申请 → 网页第一次扫码必然失败；
+  正确做法是挂起 `PermissionRequest`，并挂 `doUpdateVisitedHistory` 才能捕获 SPA hash 路由变化）。
 
 <!-- EOF-SENTINEL-PITFALLS-20261017 -->
