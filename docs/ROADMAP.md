@@ -298,6 +298,29 @@ HUAWEI P40 Pro+ / HarmonyOS 4.2 = Android 12 内核）的系统信任库里没�
   “浮层必须会被撤掉”、“诊断兜底必须纯计时”各写一条单测或静态预检规则（preflight）。
 - **验收**：本地/CI 均可一条命令跑完；清单里每条都有"操作步骤 + 预期结果"。
 
+### 进度（2026-11-02）
+
+- ✅ **壳级启动测试**（新增 `app/src/test/.../MainActivityShellTest.kt`，7 个用例）：
+  冷启动不崩 + WebView 安全配置（文件访问全关 / JS 开 / UA 带 `NhyzClubApp/`）、
+  骨架屏初始可见且加载完成后一定撤除、主文档错误/429/TLS 各自落到对应文案、
+  子资源失败**不**弹面板、错误面板盖着时按返回先收面板。
+  **用 Robolectric 而不是 `androidTest`**：本仓库没有本地 Android SDK，CI 跑模拟器要
+  多花 ~10 分钟且依赖第三方 action；而这里要验的是壳的接线，不是 Chromium 渲染。
+  真机网络/相机/推送仍由人工清单兜底（理由写在测试类的 KDoc 里）。
+- ✅ **三红线固化成 `scripts/preflight-regress.sh`**：后台线程模块（`shell/push`、`shell/update`）
+  不许出现 `webView` / `MainActivity` 不许自起 `Thread` / UA 必须主线程取快照；
+  骨架与诊断浮层必须有撤除路径；硬看门狗必须纯计时、不得依赖 `onPageFinished`。
+  **每一条都做了反向注入**（删掉/改坏后规则确实报错，3/3 命中）。
+- ✅ **一条命令**：`scripts/verify.sh`（`--static` / `--unit` / 全跑）成为本地与 CI 的唯一入口，
+  CI 的 debug / release 两个作业都改成调它（不再各写一份 gradle 命令）。
+- ✅ **人工回归清单** [`REGRESSION.md`](REGRESSION.md)：A~H 八组、按 FEATURE-MATRIX 逐行，
+  每条"操作步骤 → 预期结果"，含老设备必测项与结果记录表。
+- ✅ **发布前检查表** [`RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md)：试跑 Release、签名闸门、
+  自托管分发 sha256 回读、真机验收、回滚预案。
+- ⏳ 待办：CI 首轮跑通 Robolectric（首次会下载 android-all，之后走缓存）；真机按清单跑一遍。
+- **明确不做**：模拟器上的 instrumentation 测试（成本/收益不划算，理由见上）；
+  UI 快照测试（壳的 UI 只有骨架/错误面板两块，用例已直接断言可见性）。
+
 ---
 
 ## 区块 10 — 维护手册与交接

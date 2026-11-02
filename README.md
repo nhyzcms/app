@@ -51,10 +51,13 @@ app/                                ← 本仓库根（仓库名 app，Gradle �
 │   ├── CI-WORKFLOW.md              ← CI 工作流说明与发版前置条件
 │   ├── APP-MANIFEST.md             ← 远程配置清单（app-manifest.json）契约
 │   ├── FEATURE-MATRIX.md           ← 网站功能 ↔ 壳支持情况 台账
+│   ├── REGRESSION.md               ← 人工回归清单（按分组逐条：操作步骤 → 预期结果）
+│   ├── RELEASE-CHECKLIST.md        ← 发布前检查表（含试跑 Release / sha256 回读 / 回滚预案）
 │   └── chunks/CHUNK-0N-REPORT.md   ← 每一块的开发说明
 ├── .github/workflows/android.yml   ← CI：预检 + 单测 + debug 构建 / tag 自动发 Release
 ├── settings.gradle.kts / build.gradle.kts / gradle.properties / version.properties
-├── scripts/                        ← preflight*.sh（分区块静态预检；preflight-feel.sh 连带跑全部专项）、CI 辅助脚本、
+├── scripts/                        ← verify.sh（一条命令：预检 + 单测，本地/CI 共用）、
+│                                     preflight*.sh（分区块静态预检；preflight-feel.sh 连带跑全部专项，含 regress）、CI 辅助脚本、
 │                                     nginx-app-update.conf（/app-update/ 片段）、
 │                                     publish-apk.sh（把 APK 发到自托管目录并更新清单）
 ├── deploy/app-update/              ← 要拷到服务器 /opt/club/data/app-update/ 的清单模板与部署说明
@@ -233,7 +236,7 @@ gradle :app:testDebugUnitTest
 | 6 | 弱网与性能（首屏看护去误报 / 探测降频 / Live2D 兜底拦截 / 低内存降级） | 🟡 代码就绪（2026-10-13，CI 绿），待真机验收（[报告](docs/chunks/CHUNK-06-REPORT.md)） |
 | 7 | 签名与首个 Release 发布 | ✅ 已完成，真机验收通过 2026-10-17：[Release v0.1.0](https://github.com/nhyzcms/app/releases/tag/v0.1.0) 已发布、自托管镜像已生效（[报告](docs/chunks/CHUNK-07-REPORT.md)｜[BUILD.md §3](docs/BUILD.md)） |
 | 8 | 网站侧配套（App 模式 UI 覆盖全部功能 + 最低壳版本闸门 + manifest 端点） | 🟡 代码就绪（2026-11-01，网站 PR [#266](https://github.com/nhyzcms/club-management-website/pull/266)）：入口补齐、壳版本闸门、首页缩略图、SPA 入口 no-cache；待合并与真机回归（[报告](docs/chunks/CHUNK-08-REPORT.md)） |
-| 9 | 测试与验收（手测清单 / 回归流程 / E2E） | ⏳ |
+| 9 | 测试与验收：壳级启动测试（Robolectric）+ 三红线预检 + 人工回归清单 + 发布前检查表 + 一条命令验证 | 🟡 代码就绪（2026-11-02）：`MainActivityShellTest` 8 个用例、`preflight-regress.sh` 三条红线（均做过反向注入）、`scripts/verify.sh`；待 CI 与真机按清单回归（[报告](docs/chunks/CHUNK-09-REPORT.md)｜[回归清单](docs/REGRESSION.md)｜[发布检查表](docs/RELEASE-CHECKLIST.md)） |
 | 10 | 长期维护手册与交接 | ⏳ |
 
 分块依据与验收标准见 [`docs/ROADMAP.md`](docs/ROADMAP.md)，功能台账见 [`docs/FEATURE-MATRIX.md`](docs/FEATURE-MATRIX.md)。
@@ -277,6 +280,8 @@ gradle :app:testDebugUnitTest
 | [FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md) | 网站功能覆盖台账 |
 | [PUSH-CONTRACT.md](docs/PUSH-CONTRACT.md) | 跨仓库实时消息契约（连接 / 事件 / 未读接口 / 深链） |
 | [SCAN.md](docs/SCAN.md) | 原生扫码核验：入口位置、落点契约、安全边界、真机验收清单 |
+| [REGRESSION.md](docs/REGRESSION.md) | **人工回归清单**：按 A~H 分组，每条都有操作步骤与预期结果 |
+| [RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md) | **发布前检查表**：试跑 Release、密钥闸门、sha256 回读、回滚预案 |
 | [chunks/CHUNK-02-REPORT.md](docs/chunks/CHUNK-02-REPORT.md) | 区块 2（文件/拍照/下载/长按/分享）交付说明 |
 | [chunks/CHUNK-03-REPORT.md](docs/chunks/CHUNK-03-REPORT.md) | 区块 3（三级更新）交付说明与服务器配置步骤 |
 | [chunks/CHUNK-04-REPORT.md](docs/chunks/CHUNK-04-REPORT.md) | 区块 4（原生手感）交付说明与真机验收清单 |
@@ -284,6 +289,7 @@ gradle :app:testDebugUnitTest
 | [chunks/CHUNK-06-REPORT.md](docs/chunks/CHUNK-06-REPORT.md) | 区块 6（弱网与性能）交付说明与真机验收清单 |
 | [chunks/CHUNK-07-REPORT.md](docs/chunks/CHUNK-07-REPORT.md) | 区块 7（签名与首个 Release）交付说明与红线 |
 | [chunks/CHUNK-08-REPORT.md](docs/chunks/CHUNK-08-REPORT.md) | 区块 8（网站侧配套）交付说明与真机回归清单 |
+| [chunks/CHUNK-09-REPORT.md](docs/chunks/CHUNK-09-REPORT.md) | 区块 9（测试与验收）交付说明：为什么不用模拟器、三红线规则、验收步骤 |
 | [FIX-20261012-STARTUP-CRASH.md](docs/FIX-20261012-STARTUP-CRASH.md) | 故障报告：启动闪退（后台线程访问 WebView） |
 | [FIX-20261012-BLANK-SCREEN.md](docs/FIX-20261012-BLANK-SCREEN.md) | 故障报告：黑/白屏（骨架浮层永不揭开） |
 | [FIX-20261012-BLANK-SCREEN-2.md](docs/FIX-20261012-BLANK-SCREEN-2.md) | 故障报告：硬看门狗 + 壳侧网络探测 + 诊断浮层 |
