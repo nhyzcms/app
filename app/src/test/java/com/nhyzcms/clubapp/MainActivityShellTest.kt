@@ -16,6 +16,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
@@ -59,7 +60,12 @@ class MainActivityShellTest {
     fun tearDown() {
         // 走完整生命周期：onDestroy 里有 WebView.destroy() 与 Handler 清理，
         // 顺带验证「销毁路径本身不崩」（泄漏与 BadTokenException 的高发区）。
-        if (!activity.isFinishing) controller.pause().stop().destroy()
+        //
+        // 必须先判 isInitialized：如果 setUp 里 onCreate 就崩了，这里再抛
+        // UninitializedPropertyAccessException 会把真正的报错盖掉（CI 上排查过这种）。
+        if (::activity.isInitialized && !activity.isFinishing) {
+            controller.pause().stop().destroy()
+        }
     }
 
     // ── 1. 启动 ──────────────────────────────────────────────────────────────
@@ -108,7 +114,13 @@ class MainActivityShellTest {
         client().onReceivedHttpError(
             webView,
             request("https://8.153.145.175/", mainFrame = true),
-            android.webkit.WebResourceResponse("text/html", "UTF-8", 429, "Too Many Requests", emptyMap()),
+            android.webkit.WebResourceResponse(
+                "text/html",
+                "UTF-8",
+                429,
+                "Too Many Requests",
+                emptyMap<String, String>(),
+            ),
         )
 
         assertEquals(View.VISIBLE, view(R.id.errorPanel).visibility)
@@ -128,22 +140,16 @@ class MainActivityShellTest {
 
     @Test
     fun sslError_neverProceedsAndShowsTlsText() {
-        // 安全红线：onReceivedSslError 里绝不 proceed()。Robolectric 的 SslErrorHandler 是接口，
-        // 这里用记录型实现断言「只 cancel、不 proceed」。
-        val handlerCalls = mutableListOf<String>()
-        val handler = object : android.webkit.SslErrorHandler() {
-            // SslErrorHandler 是抽象类（不是接口），cancel/proceed 都是它的方法。
-            override fun proceed() {
-                handlerCalls += "proceed"
-            }
-
-            override fun cancel() {
-                handlerCalls += "cancel"
-            }
-        }
+        // 安全红线：onReceivedSslError 里绝不 proceed()，必须 cancel + 给 TLS 文案。
+        //
+        // 为什么用 Mockito 而不是匿名子类：`SslErrorHandler` / `SslError` 的构造函数在 SDK
+        // 里是 package-private（CI 实测 "Cannot access 'constructor()': it is package-private"），
+        // 匿名对象写不出来；mock 还能顺手断言「proceed 一次都没调过」。
+        val handler = Mockito.mock(android.webkit.SslErrorHandler::class.java)
         client().onReceivedSslError(webView, handler, sslError())
 
-        assertEquals("只允许 cancel", listOf("cancel"), handlerCalls)
+        Mockito.verify(handler).cancel()
+        Mockito.verify(handler, Mockito.never()).proceed()
         assertEquals(View.VISIBLE, view(R.id.errorPanel).visibility)
         assertEquals(
             activity.getString(R.string.error_tls),
@@ -200,24 +206,9 @@ class MainActivityShellTest {
             override fun getRequestHeaders(): MutableMap<String, String> = mutableMapOf()
         }
 
-    private fun error(): WebResourceError =
-        object : WebResourceError {
-            override fun getErrorCode(): Int = android.webkit.WebViewClient.ERROR_CONNECT
-
-            override fun getDescription(): CharSequence = "net::ERR_CONNECTION_REFUSED"
-        }
+    // WebResourceError 在 compileSdk 35 里是抽象类且构造函数不可见，只能 mock。
+    private fun error(): WebResourceError = Mockito.mock(WebResourceError::class.java)
 
     private fun sslError(): android.net.http.SslError =
-        object : android.net.http.SslError() {
-            // SslError 也是抽象类：只需要 url 能给出来。
-            override fun getUrl(): String = "https://8.153.145.175/"
-
-            override fun getPrimaryError(): Int = android.net.http.SslError.SSL_UNTRUSTED
-
-            override fun addError(error: Int): Boolean = false
-
-            override fun hasError(error: Int): Boolean = false
-
-            override fun getCertificate(): android.net.http.SslCertificate? = null
-        }
+        Mockito.mock(android.net.http.SslError::class.java)
 }

@@ -159,4 +159,7 @@ dependencies {
     // Robolectric 在 JVM 上跑真实 Activity 生命周期 + 真实布局，足以覆盖这些点；
     // 真实 WebView 的网络与渲染仍由 docs/REGRESSION.md 的人工清单兜底。
     testImplementation("org.robolectric:robolectric:4.14.1")
+    // Mockito 只用于 mock 那几个「构造函数不可见」的 Android 抽象类
+    // （SslErrorHandler / SslError / WebResourceError）；不进 APK。
+    testImplementation("org.mockito:mockito-core:5.14.2")
 }
