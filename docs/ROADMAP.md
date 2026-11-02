@@ -317,7 +317,9 @@ HUAWEI P40 Pro+ / HarmonyOS 4.2 = Android 12 内核）的系统信任库里没�
   每条"操作步骤 → 预期结果"，含老设备必测项与结果记录表。
 - ✅ **发布前检查表** [`RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md)：试跑 Release、签名闸门、
   自托管分发 sha256 回读、真机验收、回滚预案。
-- ⏳ 待办：CI 首轮跑通 Robolectric（首次会下载 android-all，之后走缓存）；真机按清单跑一遍。
+- ✅ **CI 已跑通（2026-11-02）**：`Debug APK` 绿（预检 + 277 个单测 + debug 构建，约 1 分半）。
+  首次接入红了 3 轮，全是 compileSdk 35 的构造函数约束（详见 [CHUNK-09 报告](chunks/CHUNK-09-REPORT.md) §4.3）。
+- ⏳ 待办：真机按 [REGRESSION.md](REGRESSION.md) 的 A / B 组跑一遍。
 - **明确不做**：模拟器上的 instrumentation 测试（成本/收益不划算，理由见上）；
   UI 快照测试（壳的 UI 只有骨架/错误面板两块，用例已直接断言可见性）。
 

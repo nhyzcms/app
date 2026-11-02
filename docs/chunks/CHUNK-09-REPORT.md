@@ -109,12 +109,22 @@ $ bash scripts/verify.sh --static
 
 三次注入后均已恢复原文件，复跑全绿。
 
-### 4.3 CI（待首轮）
+### 4.3 CI（2026-11-02 已跑通）
 
-`debug` 与 `release` 作业都改成 `scripts/verify.sh`。首轮要重点看两件事：
+`debug` 与 `release` 作业都改成 `scripts/verify.sh`。**首次接入共红了 3 轮**，都是 compileSdk 35
+的 SDK stub 约束，记录在此避免重犯：
 
-1. Robolectric 首次会下载 `android-all-instrumented`（几十 MB）—— 之后由 Gradle 缓存；
-2. `MainActivityShellTest` 在真实 AGP 资源打包下能否 inflate（若失败，报错会贴到 PR 评论）。
+| 轮次 | 报错 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | `Cannot access 'constructor(): SslErrorHandler': it is package-private` | `SslErrorHandler` / `SslError` / `WebResourceError` 在 SDK 里构造函数不可见，匿名子类写不出来 | 改用 Mockito mock（只进测试类路径），顺带断言 `handler.proceed()` 一次都没调 |
+| 1 | `emptyMap()` 推断不出 `Map<String, String>` | Kotlin 类型推断 | 显式 `emptyMap<String, String>()` |
+| 2 | `None of the following candidates is applicable` | `WebResourceResponse` **没有**「5 参 + headers」重载，只有 3 参与 6 参（带 `InputStream`） | 补 `ByteArrayInputStream(ByteArray(0))` |
+
+**第 3 轮通过**：`Debug APK` 58 秒内跑完 `verify.sh --static` + `:app:testDebugUnitTest` +
+`assembleDebug`（单测 54 s，其中 8 个 Robolectric 用例各启动一次真实 Activity）。
+
+教训写进 `PITFALLS.md` 的口径：**Android SDK 的抽象类不一定能匿名实现**（构造函数可能是
+package-private），单元测试里遇到这类参数优先 mock，不要跟 SDK stub 较劲。
 
 ---
 
