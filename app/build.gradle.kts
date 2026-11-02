@@ -104,6 +104,16 @@ android {
         checkReleaseBuilds = false
         abortOnError = false
     }
+
+    testOptions {
+        // 区块 9：壳级启动测试要在 JVM 上 inflate 真实布局 / 读真实资源，
+        // 所以必须把 Android 资源打进单元测试的 classpath（AGP 会生成 merged manifest 与资源表）。
+        // 代价：`:app:testDebugUnitTest` 首次会慢一些，但不引入模拟器（CI 省 ~10 分钟且更稳）。
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 // 未配置签名时阻止 release 构建（避免误发不可用包）。
@@ -141,4 +151,15 @@ dependencies {
     // PermissionsPolicy / NavPolicy）。理由：本仓库没有本地 Android 构建环境，CI 是唯一能验证的地方，
     // 纯函数不该只靠人眼审查（见 docs/chunks/CHUNK-02-REPORT.md §2.7）。
     testImplementation("junit:junit:4.13.2")
+
+    // 区块 9：壳级「启动 → 加载 → 错误页」测试。
+    // 为什么不是 androidTest：本仓库没有本地 Android SDK，CI 上跑模拟器要多花 ~10 分钟、
+    // 还要依赖第三方 emulator action，失败率与排查成本都高；而这块要验的其实是
+    // **壳自己的接线**（安全配置 / 错误分类 / 浮层撤除 / 返回键裁决），不是 Chromium 的渲染。
+    // Robolectric 在 JVM 上跑真实 Activity 生命周期 + 真实布局，足以覆盖这些点；
+    // 真实 WebView 的网络与渲染仍由 docs/REGRESSION.md 的人工清单兜底。
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    // Mockito 只用于 mock 那几个「构造函数不可见」的 Android 抽象类
+    // （SslErrorHandler / SslError / WebResourceError）；不进 APK。
+    testImplementation("org.mockito:mockito-core:5.14.2")
 }

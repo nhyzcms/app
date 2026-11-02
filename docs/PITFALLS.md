@@ -256,6 +256,26 @@ val s = """"{"a":1}""""
 更稳的做法：用普通字符串拼 JSON，并对断言对象做逐字符码点校验。
 本地防线：`scripts/preflight.sh` 3.6 段禁止源码里出现连续四个引号。
 
+### 6.3 单测里别跟 Android SDK 的"不可见构造函数"较劲（区块 9 实测）
+
+2026-11-02 首次接入 Robolectric，CI 连着红了两轮，全是同一类问题：
+
+```kotlin
+// 错：SslErrorHandler / SslError / WebResourceError 的构造函数是 package-private
+object : SslErrorHandler() { ... }        // Cannot access 'constructor()': it is package-private
+
+// 错：WebResourceResponse 没有「5 参 + headers」重载（只有 3 参和带 InputStream 的 6 参）
+WebResourceResponse("text/html", "UTF-8", 429, "Too Many Requests", emptyMap())
+
+// 对：mock 掉（还能顺手断言安全红线：proceed 一次都没调）
+val handler = Mockito.mock(SslErrorHandler::class.java)
+Mockito.verify(handler, Mockito.never()).proceed()
+```
+
+原则：**能 mock 的 SDK 类型就 mock，不要去继承/实现它**；只有真正的接口（如 `WebResourceRequest`）
+才适合写匿名实现。判断构造函数是否可见不用本地 SDK —— 看 CI 报错里列出的候选构造即可。
+
+
 ### 6.2 一次性读 computed style 会撞重渲染窗口（网站侧经验，同样适用）
 
 用一次性的 `evaluate` 去读 `transitionProperty`，可能正好落在重渲染窗口里读回空串。改为可重试的断言（Playwright 的 `toHaveCSS`），让框架自己等稳定。
